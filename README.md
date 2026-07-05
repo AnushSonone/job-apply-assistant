@@ -15,7 +15,7 @@ flowchart TB
         SHA[Fetch README SHA]
         CHANGED{SHA changed?}
         SKIP[Skip]
-        SCAN[scan-internships.yml - parse listings]
+        SCAN[scan-internships.yml]
         DIFF[Diff vs scanner.db]
         FILTER{Canada location?}
         ALERT[Telegram: role + apply link]
@@ -23,22 +23,28 @@ flowchart TB
         VAR[Update UPSTREAM_README_SHA]
     end
 
-    subgraph MAC[Phase 1b and 2 - Your Mac when you sit down]
+    PHONE[Your phone - notification only]
+
+    subgraph LAPTOP[Phase 1b and 2 - Your Mac when you sit down]
+        START[You read alert and open laptop]
         PREP[prepare-resume]
-        BOT[telegram-bot optional]
         OLLAMA[Ollama Qwen 2.5 32B]
         MASTER[master_resume.md + facts.json]
         VALID[validator + diff]
         RESUME[tailored resume.md]
-        REVISE[revise-chat or Telegram reply]
+        REVISE[revise-chat or telegram-bot]
         BRAVE[Brave CDP port 9222]
         AUTO[autofill from answer bank]
         BANK[answer_bank.yaml + profile.json]
-        MANUAL[Fill unmatched fields and submit]
+        MANUAL[Fill gaps and submit]
         LOG[log-apply to local.db]
-    end
 
-    PHONE[Your phone]
+        START --> PREP --> OLLAMA --> VALID --> RESUME --> REVISE
+        REVISE -->|feedback| OLLAMA
+        REVISE -->|done| BRAVE --> AUTO --> MANUAL --> LOG
+        MASTER --> PREP
+        BANK --> AUTO
+    end
 
     SJ --> CRON --> SHA --> CHANGED
     CHANGED -->|no| SKIP
@@ -47,16 +53,7 @@ flowchart TB
     FILTER -->|no| ALERT --> PHONE
     SCAN --> VAR
 
-    PHONE --> PREP
-    PHONE --> BOT
-    BOT --> PREP
-    BOT --> REVISE
-    MASTER --> PREP
-    PREP --> OLLAMA --> VALID --> RESUME
-    RESUME --> REVISE --> OLLAMA
-    RESUME --> PHONE
-    PHONE --> BRAVE --> AUTO --> MANUAL --> LOG
-    BANK --> AUTO
+    PHONE --> START
 ```
 
 | Phase | Where | What |
