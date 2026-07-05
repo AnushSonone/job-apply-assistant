@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import httpx
@@ -21,7 +22,7 @@ class TelegramClient:
     def configured(self) -> bool:
         return bool(self.token and self.chat_id)
 
-    def send_message(self, text: str, disable_preview: bool = False) -> None:
+    def send_message(self, text: str, disable_preview: bool = False) -> dict:
         if not self.configured:
             raise RuntimeError("TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID required")
         with httpx.Client(timeout=30) as client:
@@ -34,8 +35,9 @@ class TelegramClient:
                 },
             )
             resp.raise_for_status()
+            return resp.json()
 
-    def send_document(self, path: Path, caption: str = "") -> None:
+    def send_document(self, path: Path, caption: str = "") -> dict:
         if not self.configured:
             raise RuntimeError("TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID required")
         with httpx.Client(timeout=60) as client:
@@ -46,3 +48,15 @@ class TelegramClient:
                     files={"document": (path.name, handle)},
                 )
             resp.raise_for_status()
+            return resp.json()
+
+    def get_updates(self, offset: int | None = None, timeout: int = 30) -> list[dict]:
+        if not self.configured:
+            raise RuntimeError("TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID required")
+        params: dict = {"timeout": timeout, "allowed_updates": json.dumps(["message"])}
+        if offset is not None:
+            params["offset"] = offset
+        with httpx.Client(timeout=timeout + 10) as client:
+            resp = client.get(f"{self.base}/getUpdates", params=params)
+            resp.raise_for_status()
+            return resp.json().get("result", [])

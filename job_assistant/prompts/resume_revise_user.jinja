@@ -1,0 +1,28 @@
+Master resume (source of truth):
+
+{{ master_resume }}
+
+---
+
+Verified facts (ONLY these entities may appear):
+
+{{ facts_json }}
+
+---
+
+Target role:
+- Company: {{ company }}
+- Title: {{ role }}
+- Location: {{ location }}
+
+Current tailored resume (revise this):
+
+{{ current_tailored }}
+
+---
+
+Candidate feedback — apply these changes:
+
+{{ feedback }}
+
+Output the complete revised resume markdown.

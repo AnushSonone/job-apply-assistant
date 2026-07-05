@@ -8,7 +8,7 @@ import httpx
 from . import config
 from .db import ScannerDatabase
 from .parser import parse_readme
-from .resume import format_job_message, tailor_resume
+from .resume import format_job_message, resume_document_caption, tailor_resume
 from .telegram_client import TelegramClient
 
 
@@ -63,11 +63,25 @@ def scan_once(
                 else:
                     out_path, diff, _ = tailor_resume(job, db)
                     if notify and telegram.configured:
-                        telegram.send_document(
+                        resp = telegram.send_document(
                             out_path,
-                            caption=f"Tailored resume — {job.company} / {job.role}",
+                            caption=resume_document_caption(job),
                         )
-                        telegram.send_message(diff)
+                        msg_id = resp.get("result", {}).get("message_id")
+                        if msg_id:
+                            try:
+                                from .db import LocalDatabase
+
+                                LocalDatabase(config.LOCAL_DB_PATH).save_telegram_message(
+                                    msg_id, job.id
+                                )
+                            except Exception:
+                                pass
+                        telegram.send_message(
+                            diff
+                            + "\n\n💬 Reply to the resume file with feedback, or run:\n"
+                            f"  python -m job_assistant revise-resume --job-id {job.id} \"...\""
+                        )
             except Exception as exc:
                 if notify and telegram.configured:
                     telegram.send_message(

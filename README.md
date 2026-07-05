@@ -47,7 +47,28 @@ python -m job_assistant add-answer "how did you hear" "LinkedIn"
 python -m job_assistant log-apply ID
 ```
 
-## Apply flow
+## Resume revision (after Telegram alert)
+
+Claude can revise the tailored resume based on your feedback. Same guardrails as initial tailor (no invented facts).
+
+**Option A — Reply on Telegram** (laptop running bot):
+```bash
+python -m job_assistant telegram-bot   # leave running
+# Reply to the resume file: "Shorten the Visa bullet, less buzzwords"
+```
+
+**Option B — One-shot CLI:**
+```bash
+python -m job_assistant revise-resume --job-id abc123 "Don't say agentic in the Visa bullet" --telegram
+```
+
+**Option C — Interactive terminal chat:**
+```bash
+python -m job_assistant revise-chat --job-id abc123
+```
+
+Each revision calls Claude once (~3–6k tokens). History is stored in `local.db` for multi-turn feedback.
+
 
 1. Telegram: job alert + tailored resume + change summary
 2. Review resume on phone

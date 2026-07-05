@@ -8,7 +8,7 @@ import anthropic
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from . import config
-from .db import Job, ScannerDatabase
+from .db import Job, LocalDatabase, ScannerDatabase
 from .facts_extractor import load_or_build_facts
 from .pdf_resume import import_resume_pdf
 from .resume_diff import summarize_changes
@@ -55,6 +55,117 @@ def _render_prompt(job: Job, master: str, facts: dict) -> tuple[str, str]:
         flags=job.flags or "none",
     )
     return system, user
+
+
+def row_to_job(row) -> Job:
+    return Job(
+        id=row["id"],
+        company=row["company"],
+        role=row["role"],
+        location=row["location"],
+        terms=row["terms"] or "",
+        category=row["category"] or "",
+        apply_url=row["apply_url"],
+        simplify_url=row["simplify_url"],
+        age=row["age"] or "",
+        is_closed=bool(row["is_closed"]),
+        flags=row["flags"] or "",
+    )
+
+
+def resume_document_caption(job: Job) -> str:
+    return (
+        f"Job ID: {job.id}\n"
+        f"{job.company} — {job.role}\n\n"
+        f"Reply to this message with feedback to revise the resume."
+    )
+
+
+def revise_resume(
+    job: Job,
+    feedback: str,
+    db: ScannerDatabase,
+    local: LocalDatabase | None = None,
+    *,
+    retry_on_fail: bool = True,
+) -> tuple[Path, str, list[str]]:
+    """Revise latest tailored resume based on user feedback."""
+    if not config.ANTHROPIC_API_KEY:
+        raise RuntimeError("ANTHROPIC_API_KEY required")
+
+    latest = db.latest_resume_for_job(job.id)
+    if not latest or not Path(latest.tailored_path).exists():
+        raise FileNotFoundError(
+            f"No tailored resume for job {job.id}. Wait for CI alert or run scan locally."
+        )
+
+    base_path = ensure_master_resume()
+    master = base_path.read_text()
+    current = Path(latest.tailored_path).read_text()
+    facts = load_or_build_facts(base_path, config.FACTS_PATH)
+
+    env = Environment(
+        loader=FileSystemLoader(str(config.PROMPTS_DIR)),
+        autoescape=select_autoescape(default=False),
+    )
+    system = env.get_template("resume_revise_system.jinja").render()
+
+    raw_feedback = feedback.strip()
+    if local:
+        prior = [c for r, c in local.get_revise_history(job.id) if r == "user"]
+        if prior:
+            feedback = (
+                "Previous feedback:\n"
+                + "\n".join(f"- {p}" for p in prior)
+                + f"\n\nNew feedback:\n{raw_feedback}"
+            )
+        else:
+            feedback = raw_feedback
+        local.append_revise_message(job.id, "user", raw_feedback)
+    else:
+        feedback = raw_feedback
+
+    user = env.get_template("resume_revise_user.jinja").render(
+        master_resume=master,
+        facts_json=json.dumps(facts, indent=2),
+        company=job.company,
+        role=job.role,
+        location=job.location,
+        current_tailored=current,
+        feedback=feedback,
+    )
+
+    client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
+
+    def _call(extra: str = "") -> str:
+        content = user + (f"\n\nFix these validation errors:\n{extra}" if extra else "")
+        message = client.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=4096,
+            system=system,
+            messages=[{"role": "user", "content": content}],
+        )
+        return message.content[0].text.strip()
+
+    revised = _call()
+    validation = validate_tailored(master, revised, facts)
+    if not validation.ok and retry_on_fail:
+        revised = _call("\n".join(validation.errors))
+        validation = validate_tailored(master, revised, facts)
+
+    out_path = Path(latest.tailored_path)
+    out_path.write_text(revised + "\n")
+    db.save_resume_version(job.id, str(base_path), str(out_path))
+
+    if local:
+        local.append_revise_message(job.id, "assistant", "revised")
+
+    diff = summarize_changes(current, revised, job.company)
+    diff = f"✏️ Revised resume for {job.company}:\n{diff}"
+    warnings = validation.errors + validation.warnings
+    if warnings:
+        diff = "⚠️ Validation notes:\n" + "\n".join(f"• {w}" for w in warnings) + "\n\n" + diff
+    return out_path, diff, warnings
 
 
 def tailor_resume(

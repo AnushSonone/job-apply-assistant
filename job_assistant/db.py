@@ -242,8 +242,62 @@ class LocalDatabase(_BaseDB):
                     applied_at TEXT,
                     notes TEXT
                 );
+
+                CREATE TABLE IF NOT EXISTS revise_messages (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    job_id TEXT NOT NULL,
+                    role TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS telegram_job_messages (
+                    telegram_message_id INTEGER PRIMARY KEY,
+                    job_id TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
                 """
             )
+
+    def save_telegram_message(self, message_id: int, job_id: str) -> None:
+        with self._conn() as conn:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO telegram_job_messages (telegram_message_id, job_id, created_at)
+                VALUES (?, ?, ?)
+                """,
+                (message_id, job_id, utc_now()),
+            )
+
+    def job_id_for_telegram_message(self, message_id: int) -> str | None:
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT job_id FROM telegram_job_messages WHERE telegram_message_id = ?",
+                (message_id,),
+            ).fetchone()
+        return row["job_id"] if row else None
+
+    def append_revise_message(self, job_id: str, role: str, content: str) -> None:
+        with self._conn() as conn:
+            conn.execute(
+                """
+                INSERT INTO revise_messages (job_id, role, content, created_at)
+                VALUES (?, ?, ?, ?)
+                """,
+                (job_id, role, content, utc_now()),
+            )
+
+    def get_revise_history(self, job_id: str, limit: int = 20) -> list[tuple[str, str]]:
+        with self._conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT role, content FROM revise_messages
+                WHERE job_id = ?
+                ORDER BY id DESC LIMIT ?
+                """,
+                (job_id, limit),
+            ).fetchall()
+        return [(r["role"], r["content"]) for r in reversed(rows)]
 
     def log_application(
         self,

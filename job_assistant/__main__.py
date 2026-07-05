@@ -13,7 +13,8 @@ from .autofill import connect_and_autofill
 from .db import LocalDatabase, ScannerDatabase
 from .facts_extractor import load_or_build_facts
 from .pdf_resume import import_resume_pdf
-from .resume import ensure_master_resume
+from .resume import ensure_master_resume, revise_resume, row_to_job
+from .telegram_revise import run_telegram_bot
 from .watcher import fetch_readme, scan_once, watch
 
 
@@ -117,6 +118,53 @@ def cmd_add_answer(args: argparse.Namespace) -> None:
     print(f"Added rule to {path}")
 
 
+def cmd_revise_resume(args: argparse.Namespace) -> None:
+    scanner = ScannerDatabase(config.SCANNER_DB_PATH)
+    local = LocalDatabase(config.LOCAL_DB_PATH)
+    row = scanner.get_job(args.job_id)
+    if not row:
+        raise SystemExit(f"Unknown job: {args.job_id}")
+    job = row_to_job(row)
+    out_path, diff, _ = revise_resume(job, args.feedback, scanner, local)
+    print(diff)
+    print(f"\nSaved: {out_path}")
+    if args.telegram:
+        from .telegram_client import TelegramClient
+        from .resume import resume_document_caption
+
+        tg = TelegramClient()
+        resp = tg.send_document(out_path, caption=resume_document_caption(job))
+        msg_id = resp.get("result", {}).get("message_id")
+        if msg_id:
+            local.save_telegram_message(msg_id, job.id)
+        tg.send_message(diff)
+
+
+def cmd_revise_chat(args: argparse.Namespace) -> None:
+    scanner = ScannerDatabase(config.SCANNER_DB_PATH)
+    local = LocalDatabase(config.LOCAL_DB_PATH)
+    row = scanner.get_job(args.job_id)
+    if not row:
+        raise SystemExit(f"Unknown job: {args.job_id}")
+    job = row_to_job(row)
+    print(f"Revise chat for {job.company} — {job.role} ({job.id})")
+    print("Type feedback (empty line or Ctrl+D to quit):\n")
+    while True:
+        try:
+            line = input("> ").strip()
+        except EOFError:
+            break
+        if not line:
+            break
+        out_path, diff, _ = revise_resume(job, line, scanner, local)
+        print(diff)
+        print(f"Saved: {out_path}\n")
+
+
+def cmd_telegram_bot(_: argparse.Namespace) -> None:
+    run_telegram_bot()
+
+
 def cmd_setup_profile(_: argparse.Namespace) -> None:
     """Copy example profile/answer bank if missing."""
     profile_dst = config.PROFILE_PATH
@@ -140,6 +188,15 @@ def main(argv: list[str] | None = None) -> None:
     sub.add_parser("init-db", help="Seed scanner DB from current README")
     sub.add_parser("import-resume", help="Import PDF resume to master_resume.md + facts")
     sub.add_parser("setup", help="Create local profile.json and answer_bank.yaml")
+    sub.add_parser("telegram-bot", help="Listen for Telegram replies to revise resumes")
+
+    revise_p = sub.add_parser("revise-resume", help="Revise tailored resume with Claude")
+    revise_p.add_argument("--job-id", required=True)
+    revise_p.add_argument("feedback", help="What to change")
+    revise_p.add_argument("--telegram", action="store_true", help="Send revised resume to Telegram")
+
+    chat_p = sub.add_parser("revise-chat", help="Interactive resume revision in terminal")
+    chat_p.add_argument("--job-id", required=True)
 
     list_p = sub.add_parser("list", help="List tracked jobs")
     list_p.add_argument("--active", action="store_true")
@@ -169,6 +226,9 @@ def main(argv: list[str] | None = None) -> None:
         "init-db": cmd_init_db,
         "import-resume": cmd_import_resume,
         "setup": cmd_setup_profile,
+        "telegram-bot": cmd_telegram_bot,
+        "revise-resume": cmd_revise_resume,
+        "revise-chat": cmd_revise_chat,
         "list": cmd_list,
         "show": cmd_show,
         "autofill": cmd_autofill,
