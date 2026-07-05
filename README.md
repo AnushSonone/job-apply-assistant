@@ -11,36 +11,53 @@ flowchart TB
     SJ[SimplifyJobs README-Off-Season.md]
 
     subgraph CI[Phase 1 - GitHub Actions every 5 min]
-        CRON[Cron SHA check]
-        CHANGED{README changed?}
-        SCAN[Parse listings and diff scanner.db]
-        FILTER{Location in Canada?}
+        CRON[Cron - check-upstream.yml]
+        SHA[Fetch README SHA]
+        CHANGED{SHA changed?}
+        SKIP[Skip]
+        SCAN[scan-internships.yml - parse listings]
+        DIFF[Diff vs scanner.db]
+        FILTER{Canada location?}
         ALERT[Telegram: role + apply link]
         COMMIT[Commit scanner.db]
+        VAR[Update UPSTREAM_README_SHA]
     end
 
     subgraph MAC[Phase 1b and 2 - Your Mac when you sit down]
-        PREP[prepare-resume via Ollama]
-        REVISE[revise-chat or Telegram bot]
+        PREP[prepare-resume]
+        BOT[telegram-bot optional]
+        OLLAMA[Ollama Qwen 2.5 32B]
+        MASTER[master_resume.md + facts.json]
+        VALID[validator + diff]
+        RESUME[tailored resume.md]
+        REVISE[revise-chat or Telegram reply]
         BRAVE[Brave CDP port 9222]
         AUTO[autofill from answer bank]
-        MANUAL[You fill gaps and submit]
-        LOG[log-apply]
+        BANK[answer_bank.yaml + profile.json]
+        MANUAL[Fill unmatched fields and submit]
+        LOG[log-apply to local.db]
     end
 
     PHONE[Your phone]
 
-    SJ --> CRON --> CHANGED
-    CHANGED -->|no| CRON
-    CHANGED -->|yes| SCAN
-    SCAN --> FILTER
-    FILTER -->|Canada| COMMIT
-    FILTER -->|US/other| ALERT --> PHONE
-    SCAN --> COMMIT
-    PHONE --> PREP --> REVISE --> BRAVE --> AUTO --> MANUAL --> LOG
-```
+    SJ --> CRON --> SHA --> CHANGED
+    CHANGED -->|no| SKIP
+    CHANGED -->|yes| SCAN --> DIFF --> COMMIT
+    DIFF --> FILTER
+    FILTER -->|no| ALERT --> PHONE
+    SCAN --> VAR
 
-## Architecture
+    PHONE --> PREP
+    PHONE --> BOT
+    BOT --> PREP
+    BOT --> REVISE
+    MASTER --> PREP
+    PREP --> OLLAMA --> VALID --> RESUME
+    RESUME --> REVISE --> OLLAMA
+    RESUME --> PHONE
+    PHONE --> BRAVE --> AUTO --> MANUAL --> LOG
+    BANK --> AUTO
+```
 
 | Phase | Where | What |
 |-------|-------|------|
@@ -48,80 +65,7 @@ flowchart TB
 | **1b — Resume** | Your Mac (Ollama) | Tailor/revise resume when you sit down — not in CI |
 | **2 — Apply** | Your Mac | Brave CDP autofill from answer bank → you review & submit |
 
-CI never touches your resume or calls an LLM. Resume work uses **local Ollama** (`qwen2.5:32b-instruct-q4_K_M` on M4 Pro 24GB).
-
-### Phase 1 — Scanner (GitHub Actions, every 5 min)
-
-```mermaid
-flowchart TD
-    CRON[Cron every 5 min] --> SHA[Fetch README SHA]
-    SHA --> CHANGED{SHA changed?}
-    CHANGED -->|no| SKIP[Skip]
-    CHANGED -->|yes| SCAN[scan-internships.yml]
-    SJ[SimplifyJobs README] --> SCAN
-    SCAN --> PARSE[Parse listings]
-    PARSE --> DIFF[Diff vs scanner.db]
-    DIFF --> FILTER{Canada location?}
-    DIFF --> COMMIT[Commit scanner.db]
-    FILTER -->|no| ALERT[Telegram: role + link]
-    ALERT --> TG[Your phone]
-    SCAN --> VAR[Update UPSTREAM_README_SHA]
-```
-
-<details>
-<summary>ASCII version</summary>
-
-```
-SimplifyJobs README-Off-Season.md
-            │
-            ▼
-   ┌────────────────────────────┐
-   │  GitHub Actions (24/7)     │
-   │  Cron → SHA check → scan   │
-   │  Canada? skip alert        │
-   │  else → Telegram + commit  │
-   └────────────────────────────┘
-```
-
-</details>
-
-**CI secrets:** `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` only — no resume, no LLM, no API keys.
-
-### Phase 1b + 2 — Laptop (when you sit down)
-
-```mermaid
-flowchart TD
-    TG[Telegram alert: role + link] --> PREP[prepare-resume]
-    TG --> BOT[telegram-bot optional]
-    BOT --> PREP
-    BOT --> REVISE[revise via chat or Telegram]
-    PREP --> OLLAMA[Ollama Qwen 2.5 32B]
-    MASTER[master_resume.md + facts.json] --> PREP
-    OLLAMA --> VALID[validator + diff]
-    VALID --> RESUME[tailored resume.md]
-    RESUME --> REVISE
-    REVISE --> OLLAMA
-    RESUME --> TG
-    TG --> BRAVE[Brave CDP 9222]
-    BRAVE --> AUTO[autofill]
-    BANK[answer_bank.yaml + profile.json] --> AUTO
-    AUTO --> MANUAL[fill unmatched fields]
-    MANUAL --> SUBMIT[submit]
-    SUBMIT --> LOG[log-apply]
-    LOG --> LOCAL[local.db]
-```
-
-<details>
-<summary>ASCII version</summary>
-
-```
-Telegram alert (role + apply link)
-            │
-            ▼
-   prepare-resume → Ollama → revise → Brave autofill → submit → log-apply
-```
-
-</details>
+CI never touches your resume or calls an LLM. Resume work uses **local Ollama** (`qwen2.5:32b-instruct-q4_K_M` on M4 Pro 24GB). **CI secrets:** `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` only.
 
 ### What lives where
 
