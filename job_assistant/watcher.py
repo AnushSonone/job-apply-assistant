@@ -8,7 +8,7 @@ import httpx
 from . import config
 from .db import ScannerDatabase
 from .parser import parse_readme
-from .resume import format_job_message
+from .alerts import format_job_message
 from .telegram_client import TelegramClient
 
 

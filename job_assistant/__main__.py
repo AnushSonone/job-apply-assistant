@@ -10,9 +10,6 @@ import yaml
 
 from . import config
 from .db import LocalDatabase, ScannerDatabase
-from .facts_extractor import load_or_build_facts
-from .pdf_resume import import_resume_pdf
-from .resume import ensure_master_resume, revise_resume, row_to_job, tailor_resume
 from .watcher import fetch_readme, scan_once, watch
 
 
@@ -94,6 +91,9 @@ def cmd_init_db(_: argparse.Namespace) -> None:
 
 
 def cmd_import_resume(_: argparse.Namespace) -> None:
+    from .facts_extractor import load_or_build_facts
+    from .pdf_resume import import_resume_pdf
+
     pdf = config.BASE_RESUME_PDF
     if not pdf.exists():
         raise SystemExit(f"PDF not found: {pdf}")
@@ -119,6 +119,8 @@ def cmd_add_answer(args: argparse.Namespace) -> None:
 
 
 def cmd_prepare_resume(args: argparse.Namespace) -> None:
+    from .resume import resume_document_caption, row_to_job, tailor_resume
+
     scanner = ScannerDatabase(config.SCANNER_DB_PATH)
     row = scanner.get_job(args.job_id)
     if not row:
@@ -129,7 +131,6 @@ def cmd_prepare_resume(args: argparse.Namespace) -> None:
     print(f"\nSaved: {out_path}")
     if args.telegram:
         from .telegram_client import TelegramClient
-        from .resume import resume_document_caption
 
         local = LocalDatabase(config.LOCAL_DB_PATH)
         tg = TelegramClient()
@@ -141,6 +142,8 @@ def cmd_prepare_resume(args: argparse.Namespace) -> None:
 
 
 def cmd_revise_resume(args: argparse.Namespace) -> None:
+    from .resume import resume_document_caption, revise_resume, row_to_job
+
     scanner = ScannerDatabase(config.SCANNER_DB_PATH)
     local = LocalDatabase(config.LOCAL_DB_PATH)
     row = scanner.get_job(args.job_id)
@@ -152,7 +155,6 @@ def cmd_revise_resume(args: argparse.Namespace) -> None:
     print(f"\nSaved: {out_path}")
     if args.telegram:
         from .telegram_client import TelegramClient
-        from .resume import resume_document_caption
 
         tg = TelegramClient()
         resp = tg.send_document(out_path, caption=resume_document_caption(job))
@@ -163,6 +165,8 @@ def cmd_revise_resume(args: argparse.Namespace) -> None:
 
 
 def cmd_revise_chat(args: argparse.Namespace) -> None:
+    from .resume import revise_resume, row_to_job
+
     scanner = ScannerDatabase(config.SCANNER_DB_PATH)
     local = LocalDatabase(config.LOCAL_DB_PATH)
     row = scanner.get_job(args.job_id)
