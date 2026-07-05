@@ -35,6 +35,9 @@ jobs:
   scan:
     needs: check
     if: needs.check.outputs.changed == 'true'
+    permissions:
+      contents: write
+      actions: write
     uses: ./.github/workflows/scan-internships.yml
     secrets: inherit
     with:
