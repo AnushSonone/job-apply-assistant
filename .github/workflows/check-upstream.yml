@@ -6,7 +6,6 @@ on:
   workflow_dispatch:
 
 permissions:
-  actions: read
   contents: read
 
 jobs:
@@ -16,15 +15,15 @@ jobs:
       changed: ${{ steps.sha.outputs.changed }}
       sha: ${{ steps.sha.outputs.sha }}
     steps:
+      - uses: actions/checkout@v4
+
       - id: sha
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REPO: ${{ github.repository }}
         run: |
           SHA=$(curl -sf \
             "https://api.github.com/repos/SimplifyJobs/Summer2026-Internships/commits?path=README-Off-Season.md&sha=dev&per_page=1" \
             | jq -r '.[0].sha')
-          STORED=$(gh variable get UPSTREAM_README_SHA --repo "$REPO" 2>/dev/null || echo "")
+          STORED=$(sqlite3 job_assistant/data/scanner.db \
+            "SELECT value FROM sync_state WHERE key='upstream_sha' LIMIT 1;" 2>/dev/null || echo "")
           if [ -z "$STORED" ] || [ "$SHA" != "$STORED" ]; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
             echo "sha=$SHA" >> "$GITHUB_OUTPUT"

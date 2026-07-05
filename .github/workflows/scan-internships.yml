@@ -42,12 +42,6 @@ jobs:
           CI: "true"
         run: python -m job_assistant scan
 
-      - name: Update upstream SHA variable
-        if: inputs.upstream_sha != ''
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh variable set UPSTREAM_README_SHA --body "${{ inputs.upstream_sha }}" --repo "${{ github.repository }}"
-
       - name: Commit scanner state
         uses: stefanzweifel/git-auto-commit-action@v5
         with:

@@ -20,7 +20,6 @@ flowchart TB
         FILTER{Canada location?}
         ALERT[Telegram: role + apply link]
         COMMIT[Commit scanner.db]
-        VAR[Update UPSTREAM_README_SHA]
     end
 
     PHONE[Your phone - notification only]
@@ -51,8 +50,6 @@ flowchart TB
     CHANGED -->|yes| SCAN --> DIFF --> COMMIT
     DIFF --> FILTER
     FILTER -->|no| ALERT --> PHONE
-    SCAN --> VAR
-
     PHONE --> START
 ```
 
@@ -103,8 +100,7 @@ python -m job_assistant import-resume
 2. Add **Secrets** (Settings → Secrets → Actions):
    - `TELEGRAM_BOT_TOKEN`
    - `TELEGRAM_CHAT_ID`
-3. Add **Variable**: `UPSTREAM_README_SHA` (leave empty; CI sets it)
-4. Commit `job_assistant/data/scanner.db` (`python -m job_assistant init-db`)
+3. Commit `job_assistant/data/scanner.db` (`python -m job_assistant init-db`)
 
 ## Commands
 
