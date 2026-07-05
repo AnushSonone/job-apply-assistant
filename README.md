@@ -2,6 +2,8 @@
 
 Monitors [SimplifyJobs off-season internships](https://github.com/SimplifyJobs/Summer2026-Internships/blob/dev/README-Off-Season.md), sends Telegram alerts when new jobs appear, and helps you apply from your Mac with a locally tailored resume and answer-bank autofill.
 
+Two halves: **CI watches 24/7** (alert only), **your Mac does the work** (resume + apply).
+
 ## Architecture
 
 | Phase | Where | What |
@@ -11,6 +13,135 @@ Monitors [SimplifyJobs off-season internships](https://github.com/SimplifyJobs/S
 | **2 — Apply** | Your Mac | Brave CDP autofill from answer bank → you review & submit |
 
 CI never touches your resume or calls an LLM. Resume work uses **local Ollama** (`qwen2.5:32b-instruct-q4_K_M` on M4 Pro 24GB).
+
+### Phase 1 — Scanner (GitHub Actions, every 5 min)
+
+```
+SimplifyJobs README-Off-Season.md
+            │
+            ▼
+   ┌────────────────────────────┐
+   │  GitHub Actions (24/7)     │
+   │                            │
+   │  Cron (every 5 min)        │
+   │       │                    │
+   │       ▼                    │
+   │  Fetch README SHA (~10s)   │
+   │       │                    │
+   │       ▼                    │
+   │  SHA changed? ──no──► skip  │
+   │       │ yes                │
+   │       ▼                    │
+   │  scan-internships.yml      │
+   │  parse → diff vs scanner.db│
+   │       │                    │
+   │       ├──► Telegram alert  │──► your phone
+   │       ├──► commit scanner.db
+   │       └──► update UPSTREAM_README_SHA
+   └────────────────────────────┘
+```
+
+<details>
+<summary>Mermaid version (renders on GitHub)</summary>
+
+```mermaid
+flowchart TD
+    CRON[Cron every 5 min] --> SHA[Fetch README SHA]
+    SHA --> CHANGED{SHA changed?}
+    CHANGED -->|no| SKIP[Skip]
+    CHANGED -->|yes| SCAN[scan-internships.yml]
+    SJ[SimplifyJobs README] --> SCAN
+    SCAN --> PARSE[Parse listings]
+    PARSE --> DIFF[Diff vs scanner.db]
+    DIFF --> ALERT[Telegram alert]
+    ALERT --> TG[Your phone]
+    DIFF --> COMMIT[Commit scanner.db]
+    SCAN --> VAR[Update UPSTREAM_README_SHA]
+```
+
+</details>
+
+**CI secrets:** `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` only — no resume, no LLM, no API keys.
+
+### Phase 1b + 2 — Laptop (when you sit down)
+
+```
+Telegram alert (job ID + apply link)
+            │
+            ▼
+   ┌────────────────────────────┐
+   │  Your Mac                  │
+   │                            │
+   │  prepare-resume /prepare   │
+   │       │                    │
+   │       ▼                    │
+   │  Ollama (Qwen 2.5 32B)     │◄── master_resume.md + facts.json
+   │       │                    │
+   │       ▼                    │
+   │  validator + diff          │
+   │       │                    │
+   │       ▼                    │
+   │  tailored resume.md        │──► Telegram (review)
+   │       │                    │
+   │       ▼                    │
+   │  revise-chat / Telegram    │──► local.db (history)
+   │       │                    │
+   │       ▼                    │
+   │  Brave + CDP port 9222     │
+   │       │                    │
+   │       ▼                    │
+   │  autofill (answer bank)    │◄── profile.json + answer_bank.yaml
+   │       │                    │
+   │       ▼                    │
+   │  you fill gaps + submit    │
+   │       │                    │
+   │       ▼                    │
+   │  log-apply                 │
+   └────────────────────────────┘
+```
+
+<details>
+<summary>Mermaid version (renders on GitHub)</summary>
+
+```mermaid
+flowchart TD
+    TG[Telegram alert] --> PREP[prepare-resume]
+    TG --> BOT[telegram-bot optional]
+    BOT --> PREP
+    BOT --> REVISE[revise via chat or Telegram]
+    PREP --> OLLAMA[Ollama Qwen 2.5 32B]
+    MASTER[master_resume.md] --> PREP
+    OLLAMA --> VALID[validator + diff]
+    VALID --> RESUME[tailored resume.md]
+    RESUME --> REVISE
+    REVISE --> OLLAMA
+    RESUME --> TG
+    TG --> BRAVE[Brave CDP 9222]
+    BRAVE --> AUTO[autofill]
+    BANK[answer_bank.yaml] --> AUTO
+    AUTO --> MANUAL[fill unmatched fields]
+    MANUAL --> SUBMIT[submit]
+    SUBMIT --> LOG[log-apply]
+    LOG --> LOCAL[local.db]
+```
+
+</details>
+
+### What lives where
+
+| Data | Location | In git? |
+|------|----------|---------|
+| Job listings + notify state | `scanner.db` | Yes (CI commits) |
+| Master resume, profile, answers | `job_assistant/data/` | No (local only) |
+| Tailored resumes | `resumes/*.md` | No |
+| Revise history + apply log | `local.db` | No |
+
+### Design principles
+
+- **Human in the loop** — never auto-submits
+- **CI is cheap** — SHA poll (~10s) + full scan only on change
+- **Resume is local** — Ollama on your Mac, $0 per application
+- **Forms are deterministic** — answer bank matching, not an LLM agent
 
 ## Quick start (local)
 
@@ -53,15 +184,15 @@ python -m job_assistant add-answer "how did you hear" "LinkedIn"
 python -m job_assistant log-apply ID
 ```
 
-## Apply flow
+## Typical session
 
-1. **Phone:** Telegram alert with job details + laptop commands
-2. **Laptop:** `prepare-resume --job-id ID` (or `/prepare ID` via telegram-bot)
-3. Review resume; revise with `revise-chat` or Telegram replies
-4. Brave with CDP → open apply link
-5. `python -m job_assistant autofill --job-id ID --advance`
-6. Fill unmatched questions → submit manually
-7. `python -m job_assistant log-apply ID`
+1. **Phone** — Telegram alert: company, role, apply link, job ID, laptop commands
+2. **Laptop** — `prepare-resume --job-id ID` (Ollama tailors, ~1–3 min)
+3. **Phone/laptop** — Review; revise via Telegram replies or `revise-chat`
+4. **Brave** — Open apply link with CDP enabled
+5. **Laptop** — `autofill --job-id ID --advance`
+6. **You** — Fill gaps, submit
+7. **Laptop** — `log-apply ID`
 
 ```bash
 open -a "Brave Browser" --args --remote-debugging-port=9222
@@ -72,6 +203,7 @@ open -a "Brave Browser" --args --remote-debugging-port=9222
 Facts validator + diff summary guard against invented content. Multi-turn history in `local.db`.
 
 **Option A — Telegram** (laptop running bot + Ollama):
+
 ```bash
 python -m job_assistant telegram-bot
 # /prepare abc123
@@ -79,6 +211,7 @@ python -m job_assistant telegram-bot
 ```
 
 **Option B — CLI:**
+
 ```bash
 python -m job_assistant prepare-resume --job-id abc123 --telegram
 python -m job_assistant revise-resume --job-id abc123 "Don't say agentic" --telegram
