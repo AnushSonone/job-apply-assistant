@@ -13,7 +13,7 @@ from .autofill import connect_and_autofill
 from .db import LocalDatabase, ScannerDatabase
 from .facts_extractor import load_or_build_facts
 from .pdf_resume import import_resume_pdf
-from .resume import ensure_master_resume, revise_resume, row_to_job
+from .resume import ensure_master_resume, revise_resume, row_to_job, tailor_resume
 from .telegram_revise import run_telegram_bot
 from .watcher import fetch_readme, scan_once, watch
 
@@ -118,6 +118,28 @@ def cmd_add_answer(args: argparse.Namespace) -> None:
     print(f"Added rule to {path}")
 
 
+def cmd_prepare_resume(args: argparse.Namespace) -> None:
+    scanner = ScannerDatabase(config.SCANNER_DB_PATH)
+    row = scanner.get_job(args.job_id)
+    if not row:
+        raise SystemExit(f"Unknown job: {args.job_id}")
+    job = row_to_job(row)
+    out_path, diff, _ = tailor_resume(job, scanner)
+    print(diff)
+    print(f"\nSaved: {out_path}")
+    if args.telegram:
+        from .telegram_client import TelegramClient
+        from .resume import resume_document_caption
+
+        local = LocalDatabase(config.LOCAL_DB_PATH)
+        tg = TelegramClient()
+        resp = tg.send_document(out_path, caption=resume_document_caption(job))
+        msg_id = resp.get("result", {}).get("message_id")
+        if msg_id:
+            local.save_telegram_message(msg_id, job.id)
+        tg.send_message(diff)
+
+
 def cmd_revise_resume(args: argparse.Namespace) -> None:
     scanner = ScannerDatabase(config.SCANNER_DB_PATH)
     local = LocalDatabase(config.LOCAL_DB_PATH)
@@ -190,7 +212,11 @@ def main(argv: list[str] | None = None) -> None:
     sub.add_parser("setup", help="Create local profile.json and answer_bank.yaml")
     sub.add_parser("telegram-bot", help="Listen for Telegram replies to revise resumes")
 
-    revise_p = sub.add_parser("revise-resume", help="Revise tailored resume with Claude")
+    prep_p = sub.add_parser("prepare-resume", help="Tailor resume locally with Ollama (laptop)")
+    prep_p.add_argument("--job-id", required=True)
+    prep_p.add_argument("--telegram", action="store_true", help="Send tailored resume to Telegram")
+
+    revise_p = sub.add_parser("revise-resume", help="Revise tailored resume with local Ollama")
     revise_p.add_argument("--job-id", required=True)
     revise_p.add_argument("feedback", help="What to change")
     revise_p.add_argument("--telegram", action="store_true", help="Send revised resume to Telegram")
@@ -227,6 +253,7 @@ def main(argv: list[str] | None = None) -> None:
         "import-resume": cmd_import_resume,
         "setup": cmd_setup_profile,
         "telegram-bot": cmd_telegram_bot,
+        "prepare-resume": cmd_prepare_resume,
         "revise-resume": cmd_revise_resume,
         "revise-chat": cmd_revise_chat,
         "list": cmd_list,

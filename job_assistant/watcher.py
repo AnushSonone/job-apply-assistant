@@ -8,7 +8,7 @@ import httpx
 from . import config
 from .db import ScannerDatabase
 from .parser import parse_readme
-from .resume import format_job_message, resume_document_caption, tailor_resume
+from .resume import format_job_message
 from .telegram_client import TelegramClient
 
 
@@ -23,9 +23,9 @@ def scan_once(
     db: ScannerDatabase | None = None,
     telegram: TelegramClient | None = None,
     *,
-    prepare_resume: bool = True,
     notify: bool = True,
 ) -> list[tuple[str, str]]:
+    """Alert only — resume tailoring happens locally when you sit down."""
     db = db or ScannerDatabase(config.SCANNER_DB_PATH)
     telegram = telegram or TelegramClient()
 
@@ -52,46 +52,6 @@ def scan_once(
         if notify and telegram.configured:
             telegram.send_message(format_job_message(job, event))
 
-        if prepare_resume and not job.is_closed:
-            try:
-                if not config.ANTHROPIC_API_KEY:
-                    if notify and telegram.configured:
-                        telegram.send_message(
-                            f"⚠️ ANTHROPIC_API_KEY not set — skipping resume tailor for {job.company}. "
-                            f"Set secret and re-run scan."
-                        )
-                else:
-                    out_path, diff, _ = tailor_resume(job, db)
-                    if notify and telegram.configured:
-                        resp = telegram.send_document(
-                            out_path,
-                            caption=resume_document_caption(job),
-                        )
-                        msg_id = resp.get("result", {}).get("message_id")
-                        if msg_id:
-                            try:
-                                from .db import LocalDatabase
-
-                                LocalDatabase(config.LOCAL_DB_PATH).save_telegram_message(
-                                    msg_id, job.id
-                                )
-                            except Exception:
-                                pass
-                        telegram.send_message(
-                            diff
-                            + "\n\n💬 Reply to the resume file with feedback, or run:\n"
-                            f"  python -m job_assistant revise-resume --job-id {job.id} \"...\""
-                        )
-            except Exception as exc:
-                if notify and telegram.configured:
-                    telegram.send_message(
-                        f"⚠️ Resume prep failed for {job.company} ({job.id}): {exc}"
-                    )
-        elif notify and telegram.configured and not job.is_closed:
-            telegram.send_message(
-                f"Apply when ready:\n  python -m job_assistant autofill --job-id {job.id}"
-            )
-
         db.mark_notified(job.id)
 
     return triggered
@@ -103,7 +63,7 @@ def watch() -> None:
     print(f"Watching {config.README_URL} every {config.POLL_INTERVAL_SECONDS}s")
 
     if telegram.configured:
-        telegram.send_message("job-apply-assistant watcher started.")
+        telegram.send_message("job-apply-assistant watcher started (alert-only).")
     else:
         print("Telegram not configured — notifications disabled.")
 

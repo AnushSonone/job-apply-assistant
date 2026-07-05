@@ -21,8 +21,12 @@ README_URL = os.getenv(
 POLL_INTERVAL_SECONDS = int(os.getenv("POLL_INTERVAL_SECONDS", "600"))
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 UPSTREAM_SHA = os.getenv("UPSTREAM_SHA", "")
+
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:32b-instruct-q4_K_M")
+OLLAMA_NUM_CTX = int(os.getenv("OLLAMA_NUM_CTX", "32768"))
+OLLAMA_TIMEOUT_SECONDS = int(os.getenv("OLLAMA_TIMEOUT_SECONDS", "600"))
 
 BASE_RESUME_PATH = expand(
     os.getenv("BASE_RESUME_PATH", str(ROOT / "data" / "master_resume.md"))

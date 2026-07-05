@@ -5,7 +5,13 @@ import time
 
 from . import config
 from .db import LocalDatabase, ScannerDatabase
-from .resume import resume_document_caption, revise_resume, row_to_job
+from .llm import check_ollama
+from .resume import (
+    resume_document_caption,
+    revise_resume,
+    row_to_job,
+    tailor_resume,
+)
 from .telegram_client import TelegramClient
 
 
@@ -14,13 +20,35 @@ def _parse_job_id(text: str) -> str | None:
     return m.group(1) if m else None
 
 
-def _extract_feedback(text: str, job_id: str | None) -> str:
+def _extract_command_body(text: str, command: str, job_id: str | None) -> str:
     text = text.strip()
-    if text.startswith("/revise"):
-        text = text[len("/revise") :].strip()
+    if text.startswith(command):
+        text = text[len(command) :].strip()
     if job_id and text.startswith(job_id):
         text = text[len(job_id) :].strip().lstrip(":").strip()
     return text
+
+
+def handle_prepare_request(
+    job_id: str,
+    scanner: ScannerDatabase,
+    local: LocalDatabase,
+    telegram: TelegramClient,
+) -> None:
+    row = scanner.get_job(job_id)
+    if not row:
+        telegram.send_message(f"Unknown job ID: {job_id}")
+        return
+
+    job = row_to_job(row)
+    telegram.send_message(f"Tailoring resume for {job.company}… (local Ollama, ~1–3 min)")
+
+    out_path, diff, _ = tailor_resume(job, scanner)
+    resp = telegram.send_document(out_path, caption=resume_document_caption(job))
+    msg_id = resp.get("result", {}).get("message_id")
+    if msg_id:
+        local.save_telegram_message(msg_id, job_id)
+    telegram.send_message(diff)
 
 
 def handle_revise_request(
@@ -42,7 +70,12 @@ def handle_revise_request(
     job = row_to_job(row)
     telegram.send_message(f"Revising resume for {job.company}…")
 
-    out_path, diff, _ = revise_resume(job, feedback, scanner, local)
+    try:
+        out_path, diff, _ = revise_resume(job, feedback, scanner, local)
+    except FileNotFoundError as exc:
+        telegram.send_message(f"{exc}\n\nOr send: /prepare {job_id}")
+        return
+
     resp = telegram.send_document(out_path, caption=resume_document_caption(job))
     msg_id = resp.get("result", {}).get("message_id")
     if msg_id:
@@ -75,17 +108,25 @@ def process_update(update: dict, scanner: ScannerDatabase, local: LocalDatabase,
     if not job_id:
         job_id = _parse_job_id(text)
 
+    if text.startswith("/prepare"):
+        if not job_id:
+            telegram.send_message("Usage: /prepare <job_id>")
+            return
+        handle_prepare_request(job_id, scanner, local, telegram)
+        return
+
     if not job_id:
-        if text.startswith("/revise") or text.startswith("/help"):
+        if text.startswith(("/revise", "/help", "/start")):
             telegram.send_message(
-                "Resume revision:\n"
-                "• Reply to a resume file with your feedback\n"
-                "• Or: /revise <job_id> <feedback>\n"
+                "Resume commands (laptop + Ollama must be running):\n"
+                "• /prepare <job_id> — initial tailor\n"
+                "• Reply to a resume file with feedback\n"
+                "• /revise <job_id> <feedback>\n"
                 "Example: /revise abc123 Don't use the word agentic in the Visa bullet"
             )
         return
 
-    feedback = _extract_feedback(text, job_id)
+    feedback = _extract_command_body(text, "/revise", job_id)
     if not feedback and not text.startswith("/revise"):
         feedback = text
 
@@ -100,13 +141,13 @@ def run_telegram_bot(poll_interval: float = 1.0) -> None:
     if not telegram.configured:
         raise RuntimeError("Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in .env")
 
-    if not config.ANTHROPIC_API_KEY:
-        raise RuntimeError("Set ANTHROPIC_API_KEY in .env for resume revision")
+    check_ollama()
 
     telegram.send_message(
-        "Resume revision bot active.\n"
-        "Reply to a resume file with feedback, or send:\n"
-        "/revise <job_id> <your changes>"
+        "Resume bot active (local Ollama).\n"
+        "• /prepare <job_id> — tailor when you're at your laptop\n"
+        "• Reply to a resume file with feedback\n"
+        "• /revise <job_id> <your changes>"
     )
 
     offset: int | None = None

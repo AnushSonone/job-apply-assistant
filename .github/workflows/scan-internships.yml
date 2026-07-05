@@ -32,27 +32,12 @@ jobs:
 
       - run: pip install -r requirements-ci.txt
 
-      - name: Materialize private config from secrets
-        env:
-          MASTER_RESUME: ${{ secrets.MASTER_RESUME }}
-          PROFILE_JSON: ${{ secrets.PROFILE_JSON }}
-        run: |
-          mkdir -p job_assistant/data
-          if [ -n "$MASTER_RESUME" ]; then
-            printf '%s' "$MASTER_RESUME" > job_assistant/data/master_resume.md
-          fi
-          if [ -n "$PROFILE_JSON" ]; then
-            printf '%s' "$PROFILE_JSON" > job_assistant/data/profile.json
-          fi
-
-      - name: Run scan
+      - name: Run scan (alert-only)
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           DATABASE_PATH: job_assistant/data/scanner.db
           SCANNER_DB_PATH: job_assistant/data/scanner.db
-          BASE_RESUME_PATH: job_assistant/data/master_resume.md
           UPSTREAM_SHA: ${{ inputs.upstream_sha }}
           CI: "true"
         run: python -m job_assistant scan
