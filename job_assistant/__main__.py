@@ -9,12 +9,10 @@ import sys
 import yaml
 
 from . import config
-from .autofill import connect_and_autofill
 from .db import LocalDatabase, ScannerDatabase
 from .facts_extractor import load_or_build_facts
 from .pdf_resume import import_resume_pdf
 from .resume import ensure_master_resume, revise_resume, row_to_job, tailor_resume
-from .telegram_revise import run_telegram_bot
 from .watcher import fetch_readme, scan_once, watch
 
 
@@ -54,6 +52,8 @@ def cmd_show(args: argparse.Namespace) -> None:
 
 
 def cmd_autofill(args: argparse.Namespace) -> None:
+    from .autofill import connect_and_autofill
+
     connect_and_autofill(
         job_id=args.job_id,
         url_hint=args.url,
@@ -184,6 +184,8 @@ def cmd_revise_chat(args: argparse.Namespace) -> None:
 
 
 def cmd_telegram_bot(_: argparse.Namespace) -> None:
+    from .telegram_revise import run_telegram_bot
+
     run_telegram_bot()
 
 
