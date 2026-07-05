@@ -4,6 +4,42 @@ Monitors [SimplifyJobs off-season internships](https://github.com/SimplifyJobs/S
 
 Two halves: **CI watches 24/7** (alert only), **your Mac does the work** (resume + apply).
 
+## How it works
+
+```mermaid
+flowchart TB
+    SJ[SimplifyJobs README-Off-Season.md]
+
+    subgraph CI[Phase 1 - GitHub Actions every 5 min]
+        CRON[Cron SHA check]
+        CHANGED{README changed?}
+        SCAN[Parse listings and diff scanner.db]
+        FILTER{Location in Canada?}
+        ALERT[Telegram: role + apply link]
+        COMMIT[Commit scanner.db]
+    end
+
+    subgraph MAC[Phase 1b and 2 - Your Mac when you sit down]
+        PREP[prepare-resume via Ollama]
+        REVISE[revise-chat or Telegram bot]
+        BRAVE[Brave CDP port 9222]
+        AUTO[autofill from answer bank]
+        MANUAL[You fill gaps and submit]
+        LOG[log-apply]
+    end
+
+    PHONE[Your phone]
+
+    SJ --> CRON --> CHANGED
+    CHANGED -->|no| CRON
+    CHANGED -->|yes| SCAN
+    SCAN --> FILTER
+    FILTER -->|Canada| COMMIT
+    FILTER -->|US/other| ALERT --> PHONE
+    SCAN --> COMMIT
+    PHONE --> PREP --> REVISE --> BRAVE --> AUTO --> MANUAL --> LOG
+```
+
 ## Architecture
 
 | Phase | Where | What |
@@ -16,34 +52,6 @@ CI never touches your resume or calls an LLM. Resume work uses **local Ollama** 
 
 ### Phase 1 — Scanner (GitHub Actions, every 5 min)
 
-```
-SimplifyJobs README-Off-Season.md
-            │
-            ▼
-   ┌────────────────────────────┐
-   │  GitHub Actions (24/7)     │
-   │                            │
-   │  Cron (every 5 min)        │
-   │       │                    │
-   │       ▼                    │
-   │  Fetch README SHA (~10s)   │
-   │       │                    │
-   │       ▼                    │
-   │  SHA changed? ──no──► skip  │
-   │       │ yes                │
-   │       ▼                    │
-   │  scan-internships.yml      │
-   │  parse → diff vs scanner.db│
-   │       │                    │
-   │       ├──► Telegram alert  │──► your phone
-   │       ├──► commit scanner.db
-   │       └──► update UPSTREAM_README_SHA
-   └────────────────────────────┘
-```
-
-<details>
-<summary>Mermaid version (renders on GitHub)</summary>
-
 ```mermaid
 flowchart TD
     CRON[Cron every 5 min] --> SHA[Fetch README SHA]
@@ -53,10 +61,26 @@ flowchart TD
     SJ[SimplifyJobs README] --> SCAN
     SCAN --> PARSE[Parse listings]
     PARSE --> DIFF[Diff vs scanner.db]
-    DIFF --> ALERT[Telegram: role + link]
-    ALERT --> TG[Your phone]
+    DIFF --> FILTER{Canada location?}
     DIFF --> COMMIT[Commit scanner.db]
+    FILTER -->|no| ALERT[Telegram: role + link]
+    ALERT --> TG[Your phone]
     SCAN --> VAR[Update UPSTREAM_README_SHA]
+```
+
+<details>
+<summary>ASCII version</summary>
+
+```
+SimplifyJobs README-Off-Season.md
+            │
+            ▼
+   ┌────────────────────────────┐
+   │  GitHub Actions (24/7)     │
+   │  Cron → SHA check → scan   │
+   │  Canada? skip alert        │
+   │  else → Telegram + commit  │
+   └────────────────────────────┘
 ```
 
 </details>
@@ -65,52 +89,14 @@ flowchart TD
 
 ### Phase 1b + 2 — Laptop (when you sit down)
 
-```
-Telegram alert (job ID + apply link)
-            │
-            ▼
-   ┌────────────────────────────┐
-   │  Your Mac                  │
-   │                            │
-   │  prepare-resume /prepare   │
-   │       │                    │
-   │       ▼                    │
-   │  Ollama (Qwen 2.5 32B)     │◄── master_resume.md + facts.json
-   │       │                    │
-   │       ▼                    │
-   │  validator + diff          │
-   │       │                    │
-   │       ▼                    │
-   │  tailored resume.md        │──► Telegram (review)
-   │       │                    │
-   │       ▼                    │
-   │  revise-chat / Telegram    │──► local.db (history)
-   │       │                    │
-   │       ▼                    │
-   │  Brave + CDP port 9222     │
-   │       │                    │
-   │       ▼                    │
-   │  autofill (answer bank)    │◄── profile.json + answer_bank.yaml
-   │       │                    │
-   │       ▼                    │
-   │  you fill gaps + submit    │
-   │       │                    │
-   │       ▼                    │
-   │  log-apply                 │
-   └────────────────────────────┘
-```
-
-<details>
-<summary>Mermaid version (renders on GitHub)</summary>
-
 ```mermaid
 flowchart TD
-    TG[Telegram alert] --> PREP[prepare-resume]
+    TG[Telegram alert: role + link] --> PREP[prepare-resume]
     TG --> BOT[telegram-bot optional]
     BOT --> PREP
     BOT --> REVISE[revise via chat or Telegram]
     PREP --> OLLAMA[Ollama Qwen 2.5 32B]
-    MASTER[master_resume.md] --> PREP
+    MASTER[master_resume.md + facts.json] --> PREP
     OLLAMA --> VALID[validator + diff]
     VALID --> RESUME[tailored resume.md]
     RESUME --> REVISE
@@ -118,11 +104,21 @@ flowchart TD
     RESUME --> TG
     TG --> BRAVE[Brave CDP 9222]
     BRAVE --> AUTO[autofill]
-    BANK[answer_bank.yaml] --> AUTO
+    BANK[answer_bank.yaml + profile.json] --> AUTO
     AUTO --> MANUAL[fill unmatched fields]
     MANUAL --> SUBMIT[submit]
     SUBMIT --> LOG[log-apply]
     LOG --> LOCAL[local.db]
+```
+
+<details>
+<summary>ASCII version</summary>
+
+```
+Telegram alert (role + apply link)
+            │
+            ▼
+   prepare-resume → Ollama → revise → Brave autofill → submit → log-apply
 ```
 
 </details>
