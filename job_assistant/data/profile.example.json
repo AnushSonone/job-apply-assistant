@@ -1,0 +1,27 @@
+{
+  "first_name": "Anush",
+  "last_name": "Sonone",
+  "email": "anushse@utexas.edu",
+  "phone": "",
+  "linkedin": "https://linkedin.com/in/anushse",
+  "github": "",
+  "website": "https://anush.wiki",
+  "school": "University of Texas at Austin",
+  "degree": "B.S. Computer Science, Minor in Business",
+  "graduation_date": "May 2028",
+  "gpa": "",
+  "work_authorization": "Authorized to work in the United States",
+  "require_sponsorship": "No",
+  "location": "Austin, TX",
+  "field_synonyms": {
+    "first_name": ["first name", "given name", "fname"],
+    "last_name": ["last name", "family name", "surname", "lname"],
+    "email": ["email", "e-mail"],
+    "phone": ["phone", "mobile", "telephone"],
+    "linkedin": ["linkedin"],
+    "github": ["github"],
+    "school": ["school", "university", "college"],
+    "degree": ["degree", "major"],
+    "graduation_date": ["graduation", "expected graduation", "grad date"]
+  }
+}

@@ -1,0 +1,123 @@
+from __future__ import annotations
+
+import json
+import re
+from pathlib import Path
+
+import anthropic
+from jinja2 import Environment, FileSystemLoader, select_autoescape
+
+from . import config
+from .db import Job, ScannerDatabase
+from .facts_extractor import load_or_build_facts
+from .pdf_resume import import_resume_pdf
+from .resume_diff import summarize_changes
+from .resume_validator import validate_tailored
+
+
+def load_profile(path: Path | None = None) -> dict:
+    profile_path = path or config.PROFILE_PATH
+    if not profile_path.exists():
+        example = profile_path.parent / "profile.example.json"
+        raise FileNotFoundError(
+            f"Profile not found at {profile_path}. Copy {example} to profile.json and edit."
+        )
+    return json.loads(profile_path.read_text())
+
+
+def ensure_master_resume() -> Path:
+    """Return path to master resume markdown, importing from PDF if needed."""
+    if config.BASE_RESUME_PATH.exists():
+        return config.BASE_RESUME_PATH
+    if config.BASE_RESUME_PDF.exists():
+        import_resume_pdf(config.BASE_RESUME_PDF, config.BASE_RESUME_PATH)
+        return config.BASE_RESUME_PATH
+    raise FileNotFoundError(
+        f"No resume at {config.BASE_RESUME_PATH} or {config.BASE_RESUME_PDF}. "
+        "Run: python -m job_assistant import-resume"
+    )
+
+
+def _render_prompt(job: Job, master: str, facts: dict) -> tuple[str, str]:
+    env = Environment(
+        loader=FileSystemLoader(str(config.PROMPTS_DIR)),
+        autoescape=select_autoescape(default=False),
+    )
+    system = env.get_template("resume_tailor_system.jinja").render()
+    user = env.get_template("resume_tailor_user.jinja").render(
+        master_resume=master,
+        facts_json=json.dumps(facts, indent=2),
+        company=job.company,
+        role=job.role,
+        location=job.location,
+        terms=job.terms,
+        category=job.category,
+        flags=job.flags or "none",
+    )
+    return system, user
+
+
+def tailor_resume(
+    job: Job,
+    db: ScannerDatabase,
+    *,
+    retry_on_fail: bool = True,
+) -> tuple[Path, str, list[str]]:
+    """Returns (tailored_path, diff_summary, validation_warnings)."""
+    if not config.ANTHROPIC_API_KEY:
+        raise RuntimeError("ANTHROPIC_API_KEY required for resume tailoring")
+
+    base_path = ensure_master_resume()
+    master = base_path.read_text()
+    facts = load_or_build_facts(base_path, config.FACTS_PATH)
+    system, user = _render_prompt(job, master, facts)
+
+    client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
+
+    def _call(extra: str = "") -> str:
+        content = user + (f"\n\nFix these validation errors:\n{extra}" if extra else "")
+        message = client.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=4096,
+            system=system,
+            messages=[{"role": "user", "content": content}],
+        )
+        return message.content[0].text.strip()
+
+    tailored = _call()
+    validation = validate_tailored(master, tailored, facts)
+
+    if not validation.ok and retry_on_fail:
+        tailored = _call("\n".join(validation.errors))
+        validation = validate_tailored(master, tailored, facts)
+
+    config.RESUMES_DIR.mkdir(parents=True, exist_ok=True)
+    safe_name = re.sub(r"[^\w\-]+", "_", f"{job.company}_{job.role}")[:80]
+    out_path = config.RESUMES_DIR / f"{job.id}_{safe_name}.md"
+    out_path.write_text(tailored + "\n")
+
+    db.save_resume_version(job.id, str(base_path), str(out_path))
+    diff = summarize_changes(master, tailored, job.company)
+    warnings = validation.errors + validation.warnings
+    if warnings:
+        diff = "⚠️ Validation notes:\n" + "\n".join(f"• {w}" for w in warnings) + "\n\n" + diff
+    return out_path, diff, warnings
+
+
+def format_job_message(job: Job, event: str) -> str:
+    label = "New listing" if event == "new" else "Reopened"
+    lines = [
+        f"🟢 {label}: {job.company}",
+        f"Role: {job.role}",
+        f"Location: {job.location}",
+        f"Term: {job.terms}",
+        f"Category: {job.category}",
+    ]
+    if job.flags:
+        lines.append(f"Flags: {job.flags}")
+    if job.apply_url:
+        lines.append(f"Apply: {job.apply_url}")
+    lines.append(f"Job ID: {job.id}")
+    lines.append("")
+    lines.append("⏳ Tailoring resume…")
+    return "\n".join(lines)

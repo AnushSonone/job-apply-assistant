@@ -1,0 +1,71 @@
+name: Scan internships
+
+on:
+  workflow_call:
+    inputs:
+      upstream_sha:
+        required: false
+        type: string
+        default: ""
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: scan-internships
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    if: github.repository == 'AnushSonone/job-apply-assistant'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-ci.txt
+
+      - run: pip install -r requirements-ci.txt
+
+      - name: Materialize private config from secrets
+        env:
+          MASTER_RESUME: ${{ secrets.MASTER_RESUME }}
+          PROFILE_JSON: ${{ secrets.PROFILE_JSON }}
+        run: |
+          mkdir -p job_assistant/data
+          if [ -n "$MASTER_RESUME" ]; then
+            printf '%s' "$MASTER_RESUME" > job_assistant/data/master_resume.md
+          fi
+          if [ -n "$PROFILE_JSON" ]; then
+            printf '%s' "$PROFILE_JSON" > job_assistant/data/profile.json
+          fi
+
+      - name: Run scan
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          DATABASE_PATH: job_assistant/data/scanner.db
+          SCANNER_DB_PATH: job_assistant/data/scanner.db
+          BASE_RESUME_PATH: job_assistant/data/master_resume.md
+          UPSTREAM_SHA: ${{ inputs.upstream_sha }}
+          CI: "true"
+        run: python -m job_assistant scan
+
+      - name: Update upstream SHA variable
+        if: inputs.upstream_sha != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh variable set UPSTREAM_README_SHA --body "${{ inputs.upstream_sha }}" --repo "${{ github.repository }}"
+
+      - name: Commit scanner state
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "chore(scanner): update state [skip ci]"
+          file_pattern: job_assistant/data/scanner.db
+          skip_dirty_check: true

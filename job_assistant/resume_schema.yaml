@@ -1,0 +1,12 @@
+required_sections:
+  - header
+  - education
+  - experience
+  - projects
+  - skills
+format:
+  bullet_style: "-"
+  heading_level: "##"
+  date_format: "Mon YYYY"
+  no_columns: true
+  max_word_count_drift_pct: 10

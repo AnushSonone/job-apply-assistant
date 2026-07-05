@@ -1,0 +1,49 @@
+rules:
+  - match: ["first name", "given name", "legal first", "fname"]
+    value_from: profile.first_name
+
+  - match: ["last name", "family name", "surname", "lname"]
+    value_from: profile.last_name
+
+  - match: ["email", "e-mail"]
+    value_from: profile.email
+
+  - match: ["phone", "mobile", "telephone"]
+    value_from: profile.phone
+
+  - match: ["linkedin"]
+    value_from: profile.linkedin
+
+  - match: ["github"]
+    value_from: profile.github
+
+  - match: ["school", "university", "college"]
+    value_from: profile.school
+
+  - match: ["degree", "major", "field of study"]
+    value_from: profile.degree
+
+  - match: ["graduation", "expected graduation", "grad date"]
+    value_from: profile.graduation_date
+
+  - match: ["gpa", "grade point"]
+    value_from: profile.gpa
+
+  - match: ["authorized to work", "work authorization", "legally authorized"]
+    value_from: profile.work_authorization
+
+  - match: ["require sponsorship", "visa sponsorship", "immigration sponsorship"]
+    value_from: profile.require_sponsorship
+
+  - match: ["how did you hear"]
+    value: "LinkedIn"
+
+  - match: ["resume", "cv", "curriculum vitae", "upload"]
+    action: upload_file
+    value_from: resume.latest_for_job
+
+  - match: ["gender", "race", "ethnicity", "veteran", "disability", "eeo"]
+    action: skip
+
+  - match: ["why.*(role|position|company|interested)", "cover letter", "tell us about"]
+    action: skip

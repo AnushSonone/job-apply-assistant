@@ -1,0 +1,12 @@
+.env
+__pycache__/
+*.pyc
+.venv/
+job_assistant/data/local.db
+job_assistant/data/profile.json
+job_assistant/data/answer_bank.yaml
+job_assistant/data/master_resume.md
+job_assistant/data/facts.json
+job_assistant/data/jobs.db
+job_assistant/resumes/*
+!job_assistant/resumes/.gitkeep
