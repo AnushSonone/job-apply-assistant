@@ -53,7 +53,7 @@ flowchart TD
     SJ[SimplifyJobs README] --> SCAN
     SCAN --> PARSE[Parse listings]
     PARSE --> DIFF[Diff vs scanner.db]
-    DIFF --> ALERT[Telegram alert]
+    DIFF --> ALERT[Telegram: role + link]
     ALERT --> TG[Your phone]
     DIFF --> COMMIT[Commit scanner.db]
     SCAN --> VAR[Update UPSTREAM_README_SHA]
@@ -186,7 +186,7 @@ python -m job_assistant log-apply ID
 
 ## Typical session
 
-1. **Phone** — Telegram alert: company, role, apply link, job ID, laptop commands
+1. **Phone** — Telegram alert: role + apply link (Canada locations skipped)
 2. **Laptop** — `prepare-resume --job-id ID` (Ollama tailors, ~1–3 min)
 3. **Phone/laptop** — Review; revise via Telegram replies or `revise-chat`
 4. **Brave** — Open apply link with CDP enabled

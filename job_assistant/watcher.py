@@ -8,7 +8,7 @@ import httpx
 from . import config
 from .db import ScannerDatabase
 from .parser import parse_readme
-from .alerts import format_job_message
+from .alerts import format_job_message, should_alert
 from .telegram_client import TelegramClient
 
 
@@ -48,9 +48,13 @@ def scan_once(
         if first_sync or not should_notify:
             continue
 
+        if not should_alert(job):
+            db.mark_notified(job.id)
+            continue
+
         triggered.append((job.id, event))
         if notify and telegram.configured:
-            telegram.send_message(format_job_message(job, event))
+            telegram.send_message(format_job_message(job))
 
         db.mark_notified(job.id)
 
