@@ -55,7 +55,7 @@ flowchart TB
 
 | Phase | Where | What |
 |-------|-------|------|
-| **1 — Scanner** | GitHub Actions (every 5 min) | Detect new/reopened jobs → **Telegram alert only** |
+| **1 — Scanner** | GitHub Actions (every 5 min) | New listings ≤7 days old → **Telegram alert only** |
 | **1b — Resume** | Your Mac (Ollama) | Tailor/revise resume when you sit down — not in CI |
 | **2 — Apply** | Your Mac | Brave CDP autofill from answer bank → you review & submit |
 

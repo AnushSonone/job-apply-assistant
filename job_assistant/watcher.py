@@ -48,8 +48,11 @@ def scan_once(
         if first_sync or not should_notify:
             continue
 
-        if not should_alert(job):
-            db.mark_notified(job.id)
+        row = db.get_job(job.id)
+        if row and row["last_notified_at"]:
+            continue
+
+        if not should_alert(job, event):
             continue
 
         triggered.append((job.id, event))

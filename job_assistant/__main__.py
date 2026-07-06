@@ -20,7 +20,7 @@ def cmd_scan(_: argparse.Namespace) -> None:
         for job_id, event in hits:
             print(f"  {event}: {job_id}")
     else:
-        print("No new or reopened listings.")
+        print("No new listings.")
 
 
 def cmd_watch(_: argparse.Namespace) -> None:
@@ -211,7 +211,7 @@ def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="SimplifyJobs off-season apply assistant")
     sub = parser.add_subparsers(dest="command", required=True)
 
-    sub.add_parser("scan", help="One-shot fetch; notify on new/reopened listings")
+    sub.add_parser("scan", help="One-shot fetch; notify on new listings only")
     sub.add_parser("watch", help="Poll README locally (fallback)")
     sub.add_parser("init-db", help="Seed scanner DB from current README")
     sub.add_parser("import-resume", help="Import PDF resume to master_resume.md + facts")
