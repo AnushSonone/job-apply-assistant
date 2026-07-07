@@ -47,7 +47,6 @@ def _extract_links(td) -> tuple[str | None, str | None]:
     simplify_url = None
     for anchor in td.find_all("a", href=True):
         href = anchor["href"].strip()
-        host = urlparse(href).netloc.lower()
         if "simplify.jobs/p/" in href:
             simplify_url = href
         elif apply_url is None and "imgur.com" not in href:
@@ -84,7 +83,7 @@ def parse_readme(content: str) -> list[Job]:
     soup = BeautifulSoup(content, "html.parser")
     jobs: list[Job] = []
 
-    for row in soup.find_all("tr"):
+    for row_index, row in enumerate(soup.find_all("tr")):
         cells = row.find_all("td")
         if len(cells) < 6:
             continue
@@ -115,6 +114,7 @@ def parse_readme(content: str) -> list[Job]:
                 age=age,
                 is_closed=is_closed,
                 flags=flags,
+                row_index=row_index,
             )
         )
 

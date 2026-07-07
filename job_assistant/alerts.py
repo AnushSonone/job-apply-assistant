@@ -5,7 +5,10 @@ import re
 from . import config
 from .db import Job
 
-_AGE_RE = re.compile(r"^(\d+)\s*(d|day|days|w|wk|wks|week|weeks|mo|mos|month|months|y|yr|yrs|year|years)$", re.I)
+_AGE_RE = re.compile(
+    r"^(\d+)\s*(d|day|days|w|wk|wks|week|weeks|mo|mos|month|months|y|yr|yrs|year|years)$",
+    re.I,
+)
 
 
 def parse_posting_age_days(age: str) -> int | None:
@@ -40,9 +43,9 @@ def is_recent_posting(job: Job) -> bool:
     return days <= config.MAX_POSTING_AGE_DAYS
 
 
-def should_alert(job: Job, event: str) -> bool:
-    """Only brand-new listings posted within MAX_POSTING_AGE_DAYS, not Canada."""
-    if event != "new":
+def should_alert(job: Job) -> bool:
+    """Only rows added in the latest upstream diff, fresh (≤1d), not Canada."""
+    if job.is_closed or not job.apply_url:
         return False
     if is_canada_location(job.location):
         return False

@@ -8,6 +8,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator
 
+from .job_keys import legacy_job_id, stable_key, stable_key_for
+
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
@@ -26,6 +28,7 @@ class Job:
     age: str
     is_closed: bool
     flags: str
+    row_index: int = 0
 
 
 @dataclass
@@ -93,26 +96,66 @@ class ScannerDatabase(_BaseDB):
                 );
                 """
             )
+            self._migrate_schema(conn)
+
+    def _migrate_schema(self, conn: sqlite3.Connection) -> None:
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(jobs)")}
+        if "stable_key" not in columns:
+            conn.execute("ALTER TABLE jobs ADD COLUMN stable_key TEXT")
+        if "row_index" not in columns:
+            conn.execute("ALTER TABLE jobs ADD COLUMN row_index INTEGER NOT NULL DEFAULT 0")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_jobs_stable_key ON jobs(stable_key)"
+        )
+        rows = conn.execute(
+            "SELECT id, company, role, location, apply_url, simplify_url, stable_key "
+            "FROM jobs WHERE stable_key IS NULL OR stable_key = ''"
+        ).fetchall()
+        for row in rows:
+            key = stable_key_for(
+                company=row["company"],
+                role=row["role"],
+                location=row["location"],
+                apply_url=row["apply_url"],
+                simplify_url=row["simplify_url"],
+            )
+            conn.execute(
+                "UPDATE jobs SET stable_key = ? WHERE id = ?",
+                (key, row["id"]),
+            )
 
     def get_job(self, job_id: str) -> sqlite3.Row | None:
         with self._conn() as conn:
             return conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
 
+    def get_job_by_stable_key(self, key: str) -> sqlite3.Row | None:
+        with self._conn() as conn:
+            return conn.execute(
+                "SELECT * FROM jobs WHERE stable_key = ?", (key,)
+            ).fetchone()
+
     def upsert_job(self, job: Job) -> tuple[str, bool]:
         now = utc_now()
+        key = stable_key(job)
         with self._conn() as conn:
-            row = conn.execute("SELECT * FROM jobs WHERE id = ?", (job.id,)).fetchone()
+            row = conn.execute(
+                "SELECT * FROM jobs WHERE stable_key = ?", (key,)
+            ).fetchone()
+            if row is None:
+                row = conn.execute("SELECT * FROM jobs WHERE id = ?", (job.id,)).fetchone()
+
             if row is None:
                 conn.execute(
                     """
                     INSERT INTO jobs (
-                        id, company, role, location, terms, category,
-                        apply_url, simplify_url, age, is_closed, flags,
+                        id, stable_key, company, role, location, terms, category,
+                        apply_url, simplify_url, age, is_closed, flags, row_index,
                         first_seen_at, last_seen_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         job.id,
+                        key,
                         job.company,
                         job.role,
                         job.location,
@@ -123,6 +166,7 @@ class ScannerDatabase(_BaseDB):
                         job.age,
                         int(job.is_closed),
                         job.flags,
+                        job.row_index,
                         now,
                         now,
                     ),
@@ -135,12 +179,14 @@ class ScannerDatabase(_BaseDB):
             conn.execute(
                 """
                 UPDATE jobs SET
-                    company = ?, role = ?, location = ?, terms = ?, category = ?,
-                    apply_url = ?, simplify_url = ?, age = ?, is_closed = ?, flags = ?,
-                    last_seen_at = ?
-                WHERE id = ?
+                    id = ?, stable_key = ?, company = ?, role = ?, location = ?,
+                    terms = ?, category = ?, apply_url = ?, simplify_url = ?,
+                    age = ?, is_closed = ?, flags = ?, row_index = ?, last_seen_at = ?
+                WHERE stable_key = ?
                 """,
                 (
+                    job.id,
+                    key,
                     job.company,
                     job.role,
                     job.location,
@@ -151,8 +197,9 @@ class ScannerDatabase(_BaseDB):
                     job.age,
                     int(job.is_closed),
                     job.flags,
+                    job.row_index,
                     now,
-                    job.id,
+                    key,
                 ),
             )
             if was_closed and not job.is_closed and job.apply_url:
@@ -203,7 +250,7 @@ class ScannerDatabase(_BaseDB):
         query = "SELECT * FROM jobs"
         if active_only:
             query += " WHERE is_closed = 0 AND apply_url IS NOT NULL"
-        query += " ORDER BY last_seen_at DESC"
+        query += " ORDER BY row_index ASC, last_seen_at DESC"
         with self._conn() as conn:
             return list(conn.execute(query))
 
@@ -326,5 +373,4 @@ Database = ScannerDatabase
 
 
 def job_id(company: str, role: str, location: str) -> str:
-    raw = f"{company.strip().lower()}|{role.strip().lower()}|{location.strip().lower()}"
-    return hashlib.sha256(raw.encode()).hexdigest()[:16]
+    return legacy_job_id(company, role, location)

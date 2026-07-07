@@ -1,22 +1,15 @@
 from __future__ import annotations
 
-import hashlib
 import time
 
-import httpx
-
 from . import config
-from .db import ScannerDatabase
-from .parser import parse_readme
 from .alerts import format_job_message, should_alert
+from .db import ScannerDatabase
+from .diff import added_jobs
+from .job_keys import stable_key
+from .parser import parse_readme
 from .telegram_client import TelegramClient
-
-
-def fetch_readme(url: str = config.README_URL) -> str:
-    with httpx.Client(timeout=60, follow_redirects=True) as client:
-        resp = client.get(url, headers={"User-Agent": "job-apply-assistant/0.1"})
-        resp.raise_for_status()
-        return resp.text
+from .upstream import fetch_latest_upstream_sha, fetch_readme, fetch_readme_at_commit
 
 
 def scan_once(
@@ -25,42 +18,48 @@ def scan_once(
     *,
     notify: bool = True,
 ) -> list[tuple[str, str]]:
-    """Alert only — resume tailoring happens locally when you sit down."""
+    """Diff upstream commits and alert only on rows added in the latest change."""
     db = db or ScannerDatabase(config.SCANNER_DB_PATH)
     telegram = telegram or TelegramClient()
+    dry_run = config.SCAN_DRY_RUN
 
-    if config.UPSTREAM_SHA:
-        db.set_sync_value("upstream_sha", config.UPSTREAM_SHA)
+    new_sha = config.UPSTREAM_SHA or fetch_latest_upstream_sha()
+    old_sha = db.get_sync_value("upstream_sha")
 
-    content = fetch_readme()
-    content_hash = hashlib.sha256(content.encode()).hexdigest()
-    prev_hash = db.get_sync_value("readme_sha256")
-    if prev_hash == content_hash:
+    if old_sha == new_sha:
         return []
 
-    first_sync = prev_hash is None
-    db.set_sync_value("readme_sha256", content_hash)
-    jobs = parse_readme(content)
-    triggered: list[tuple[str, str]] = []
+    new_content = fetch_readme()
+    if old_sha:
+        old_content = fetch_readme_at_commit(old_sha)
+        candidates = added_jobs(old_content, new_content)
+    else:
+        candidates = []
 
+    jobs = parse_readme(new_content)
     for job in jobs:
-        event, should_notify = db.upsert_job(job)
-        if first_sync or not should_notify:
+        db.upsert_job(job)
+
+    triggered: list[tuple[str, str]] = []
+    for job in candidates:
+        if not should_alert(job):
             continue
 
-        row = db.get_job(job.id)
+        row = db.get_job_by_stable_key(stable_key(job)) or db.get_job(job.id)
         if row and row["last_notified_at"]:
             continue
 
-        if not should_alert(job, event):
-            continue
-
-        triggered.append((job.id, event))
-        if notify and telegram.configured:
+        triggered.append((job.id, "added"))
+        label = f"{job.company} — {job.role} ({job.age})"
+        if dry_run:
+            print(f"[dry-run] would alert: {label}")
+        elif notify and telegram.configured:
             telegram.send_message(format_job_message(job))
 
-        db.mark_notified(job.id)
+        if not dry_run:
+            db.mark_notified(job.id)
 
+    db.set_sync_value("upstream_sha", new_sha)
     return triggered
 
 

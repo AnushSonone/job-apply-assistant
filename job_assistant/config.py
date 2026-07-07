@@ -14,15 +14,19 @@ def expand(path: str) -> Path:
     return Path(os.path.expanduser(path)).resolve()
 
 
+UPSTREAM_REPO = os.getenv("UPSTREAM_REPO", "SimplifyJobs/Summer2026-Internships")
+README_PATH = os.getenv("README_PATH", "README-Off-Season.md")
+UPSTREAM_BRANCH = os.getenv("UPSTREAM_BRANCH", "dev")
 README_URL = os.getenv(
     "README_URL",
-    "https://raw.githubusercontent.com/SimplifyJobs/Summer2026-Internships/dev/README-Off-Season.md",
+    f"https://raw.githubusercontent.com/{UPSTREAM_REPO}/{UPSTREAM_BRANCH}/{README_PATH}",
 )
 POLL_INTERVAL_SECONDS = int(os.getenv("POLL_INTERVAL_SECONDS", "600"))
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
 UPSTREAM_SHA = os.getenv("UPSTREAM_SHA", "")
-MAX_POSTING_AGE_DAYS = int(os.getenv("MAX_POSTING_AGE_DAYS", "7"))
+MAX_POSTING_AGE_DAYS = int(os.getenv("MAX_POSTING_AGE_DAYS", "1"))
+SCAN_DRY_RUN = os.getenv("SCAN_DRY_RUN", "").lower() in {"1", "true", "yes"}
 
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:32b-instruct-q4_K_M")
@@ -62,6 +66,10 @@ RESUMES_DIR = Path(
     )
 )
 CDP_URL = os.getenv("CDP_URL", "http://127.0.0.1:9222")
+JOB_CONTEXT_DIR = expand(
+    os.getenv("JOB_CONTEXT_DIR", str(ROOT / "data" / "job_descriptions"))
+)
+JOB_DESCRIPTION_MAX_CHARS = int(os.getenv("JOB_DESCRIPTION_MAX_CHARS", "24000"))
 
 PROMPTS_DIR = ROOT / "prompts"
 RESUME_SCHEMA_PATH = ROOT / "resume_schema.yaml"

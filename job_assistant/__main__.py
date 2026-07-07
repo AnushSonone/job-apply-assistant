@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import sys
 
 import yaml
@@ -74,19 +73,35 @@ def cmd_log_apply(args: argparse.Namespace) -> None:
     print(f"Logged application: {company}")
 
 
-def cmd_init_db(_: argparse.Namespace) -> None:
+def cmd_sync_upstream(_: argparse.Namespace) -> None:
+    """Align scanner state with current upstream README without sending alerts."""
     from .parser import parse_readme
+    from .upstream import fetch_latest_upstream_sha
 
     db = ScannerDatabase(config.SCANNER_DB_PATH)
     content = fetch_readme()
-    db.set_sync_value("readme_sha256", hashlib.sha256(content.encode()).hexdigest())
     jobs = parse_readme(content)
     for job in jobs:
         db.upsert_job(job)
+    sha = fetch_latest_upstream_sha()
+    db.set_sync_value("upstream_sha", sha)
+    print(f"Synced {len(jobs)} jobs; upstream_sha={sha[:12]}…")
+
+
+def cmd_init_db(_: argparse.Namespace) -> None:
+    from .parser import parse_readme
+    from .upstream import fetch_latest_upstream_sha
+
+    db = ScannerDatabase(config.SCANNER_DB_PATH)
+    content = fetch_readme()
+    jobs = parse_readme(content)
+    for job in jobs:
+        db.upsert_job(job)
+    db.set_sync_value("upstream_sha", fetch_latest_upstream_sha())
     open_count = sum(1 for j in jobs if not j.is_closed)
     print(
         f"Seeded {len(jobs)} jobs ({open_count} open) into {config.SCANNER_DB_PATH}. "
-        "Future scans only alert on new/reopened listings."
+        "Future scans diff upstream commits and alert only on fresh new rows."
     )
 
 
@@ -214,6 +229,7 @@ def main(argv: list[str] | None = None) -> None:
     sub.add_parser("scan", help="One-shot fetch; notify on new listings only")
     sub.add_parser("watch", help="Poll README locally (fallback)")
     sub.add_parser("init-db", help="Seed scanner DB from current README")
+    sub.add_parser("sync-upstream", help="Refresh DB + upstream SHA without alerts")
     sub.add_parser("import-resume", help="Import PDF resume to master_resume.md + facts")
     sub.add_parser("setup", help="Create local profile.json and answer_bank.yaml")
     sub.add_parser("telegram-bot", help="Listen for Telegram replies to revise resumes")
@@ -256,6 +272,7 @@ def main(argv: list[str] | None = None) -> None:
         "scan": cmd_scan,
         "watch": cmd_watch,
         "init-db": cmd_init_db,
+        "sync-upstream": cmd_sync_upstream,
         "import-resume": cmd_import_resume,
         "setup": cmd_setup_profile,
         "telegram-bot": cmd_telegram_bot,
