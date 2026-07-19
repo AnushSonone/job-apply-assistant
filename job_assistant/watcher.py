@@ -29,7 +29,9 @@ def scan_once(
     if old_sha == new_sha:
         return []
 
-    new_content = fetch_readme()
+    # Diff against the exact SHA we are about to record, not branch HEAD, so
+    # the stored baseline always matches the content we actually compared.
+    new_content = fetch_readme_at_commit(new_sha)
     if old_sha:
         old_content = fetch_readme_at_commit(old_sha)
         candidates = added_jobs(old_content, new_content)

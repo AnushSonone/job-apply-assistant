@@ -36,7 +36,15 @@ def is_canada_location(location: str) -> bool:
     return "canada" in location.lower()
 
 
+_UK_RE = re.compile(r"\buk\b|united kingdom|\blondon\b|\bengland\b", re.I)
+
+
+def is_uk_location(location: str) -> bool:
+    return bool(_UK_RE.search(location))
+
+
 def is_recent_posting(job: Job) -> bool:
+    """True only for postings still marked 0d (or ≤ MAX_POSTING_AGE_DAYS)."""
     days = parse_posting_age_days(job.age)
     if days is None:
         return False
@@ -44,16 +52,22 @@ def is_recent_posting(job: Job) -> bool:
 
 
 def should_alert(job: Job) -> bool:
-    """Only rows added in the latest upstream diff, fresh (≤1d), not Canada."""
+    """Alert only on newly added, applyable, 0d postings — skip Canada and UK/London.
+
+    Commit-diff decides *new to the README*; the age column decides *fresh enough*.
+    Without the age gate, a lagging upstream_sha dumps every row added during the
+    gap (days/months old) as Telegram spam.
+    """
     if job.is_closed or not job.apply_url:
         return False
-    if is_canada_location(job.location):
+    if is_canada_location(job.location) or is_uk_location(job.location):
         return False
     return is_recent_posting(job)
 
 
 def format_job_message(job: Job) -> str:
     url = job.apply_url or job.simplify_url
+    header = f"{job.company} — {job.role}"
     if url:
-        return f"{job.role}\n{url}"
-    return job.role
+        return f"{header}\n{url}"
+    return header

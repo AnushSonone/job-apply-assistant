@@ -68,7 +68,7 @@ def test_added_jobs_ignores_text_change_same_url() -> None:
     assert added_jobs(old, new) == []
 
 
-def test_should_alert_rejects_stale_and_canada() -> None:
+def test_should_alert_only_zero_day_skips_canada_and_uk() -> None:
     fresh = Job(
         id="x",
         company="Acme",
@@ -82,12 +82,18 @@ def test_should_alert_rejects_stale_and_canada() -> None:
         is_closed=False,
         flags="",
     )
-    stale = Job(**{**fresh.__dict__, "age": "4d"})
+    one_day = Job(**{**fresh.__dict__, "age": "1d"})
+    older_age = Job(**{**fresh.__dict__, "age": "4d"})
     canada = Job(**{**fresh.__dict__, "location": "Remote in Canada"})
+    uk = Job(**{**fresh.__dict__, "location": "London, UK"})
+    no_link = Job(**{**fresh.__dict__, "apply_url": None, "is_closed": True})
 
     assert should_alert(fresh) is True
-    assert should_alert(stale) is False
+    assert should_alert(one_day) is False
+    assert should_alert(older_age) is False
     assert should_alert(canada) is False
+    assert should_alert(uk) is False
+    assert should_alert(no_link) is False
 
 
 def test_stable_key_prefers_apply_url() -> None:
