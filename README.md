@@ -1,6 +1,18 @@
 # job-apply-assistant
 
-Monitors [SimplifyJobs off-season internships](https://github.com/SimplifyJobs/Summer2026-Internships/blob/dev/README-Off-Season.md), sends Telegram alerts when new jobs appear, and helps you apply from your Mac with a locally tailored resume and answer-bank autofill.
+Monitors two SimplifyJobs lists, sends Telegram alerts when new jobs appear, and helps you apply from your Mac with a locally tailored resume and answer-bank autofill.
+
+| Source key | List | Path |
+|---|---|---|
+| `off-season` | [Off-Season](https://github.com/SimplifyJobs/Summer2027-Internships/blob/dev/README-Off-Season.md) | `README-Off-Season.md` |
+| `summer2027` | [Summer 2027](https://github.com/SimplifyJobs/Summer2027-Internships/blob/dev/README.md) | `README.md` |
+
+Each source is diffed independently and keeps its own baseline commit in
+`sync_state` (`upstream_sha:<key>`), so a stalled or renamed list never resets the
+other. Every Telegram alert names the repo and list it came from. A posting that
+appears in both lists only alerts once, matched on its apply URL.
+
+Set `ENABLED_SOURCES` to narrow what is watched (default `off-season,summer2027`).
 
 Two halves: **CI watches 24/7** (alert only), **your Mac does the work** (resume + apply).
 
@@ -8,17 +20,17 @@ Two halves: **CI watches 24/7** (alert only), **your Mac does the work** (resume
 
 ```mermaid
 flowchart TB
-    SJ[SimplifyJobs README-Off-Season.md]
+    SJ[SimplifyJobs README-Off-Season.md + README.md]
 
     subgraph CI[Phase 1 - GitHub Actions every 5 min]
         CRON[Cron - check-upstream.yml]
-        SHA[Fetch README SHA]
-        CHANGED{SHA changed?}
+        SHA[Fetch SHA per source]
+        CHANGED{Any SHA changed?}
         SKIP[Skip]
         SCAN[scan-internships.yml]
         DIFF[Diff vs scanner.db]
         FILTER{Canada location?}
-        ALERT[Telegram: role + apply link]
+        ALERT[Telegram: role + source repo + apply link]
         COMMIT[Commit scanner.db]
     end
 

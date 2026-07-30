@@ -14,23 +14,19 @@ def fetch_readme(url: str = config.README_URL) -> str:
         return resp.text
 
 
-def fetch_readme_at_commit(sha: str) -> str:
-    url = (
-        f"https://raw.githubusercontent.com/{config.UPSTREAM_REPO}/"
-        f"{sha}/{config.README_PATH}"
-    )
-    return fetch_readme(url)
+def fetch_source_readme_at_commit(source: config.Source, sha: str) -> str:
+    return fetch_readme(source.readme_url_at(sha))
 
 
-def fetch_latest_upstream_sha() -> str:
+def fetch_latest_sha_for_source(source: config.Source) -> str:
     api = (
-        f"https://api.github.com/repos/{config.UPSTREAM_REPO}/commits"
-        f"?path={config.README_PATH}&sha={config.UPSTREAM_BRANCH}&per_page=1"
+        f"https://api.github.com/repos/{source.repo}/commits"
+        f"?path={source.readme_path}&sha={source.branch}&per_page=1"
     )
     with httpx.Client(timeout=30, follow_redirects=True) as client:
         resp = client.get(api, headers=_HEADERS)
         resp.raise_for_status()
         data = resp.json()
-    if not data:
-        raise RuntimeError("No commits found for upstream README")
+    if not isinstance(data, list) or not data:
+        raise RuntimeError(f"No commits found for {source.repo}:{source.readme_path}")
     return data[0]["sha"]

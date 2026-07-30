@@ -29,6 +29,7 @@ class Job:
     is_closed: bool
     flags: str
     row_index: int = 0
+    source: str = ""
 
 
 @dataclass
@@ -104,9 +105,21 @@ class ScannerDatabase(_BaseDB):
             conn.execute("ALTER TABLE jobs ADD COLUMN stable_key TEXT")
         if "row_index" not in columns:
             conn.execute("ALTER TABLE jobs ADD COLUMN row_index INTEGER NOT NULL DEFAULT 0")
+        if "source" not in columns:
+            conn.execute("ALTER TABLE jobs ADD COLUMN source TEXT NOT NULL DEFAULT ''")
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_jobs_stable_key ON jobs(stable_key)"
         )
+        # The single-source baseline becomes the off-season source's baseline, so
+        # going multi-source does not replay the whole README as "added".
+        legacy = conn.execute(
+            "SELECT value FROM sync_state WHERE key = 'upstream_sha'"
+        ).fetchone()
+        if legacy and legacy["value"]:
+            conn.execute(
+                "INSERT OR IGNORE INTO sync_state (key, value) VALUES (?, ?)",
+                ("upstream_sha:off-season", legacy["value"]),
+            )
         rows = conn.execute(
             "SELECT id, company, role, location, apply_url, simplify_url, stable_key "
             "FROM jobs WHERE stable_key IS NULL OR stable_key = ''"
@@ -150,8 +163,8 @@ class ScannerDatabase(_BaseDB):
                     INSERT INTO jobs (
                         id, stable_key, company, role, location, terms, category,
                         apply_url, simplify_url, age, is_closed, flags, row_index,
-                        first_seen_at, last_seen_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        source, first_seen_at, last_seen_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         job.id,
@@ -167,6 +180,7 @@ class ScannerDatabase(_BaseDB):
                         int(job.is_closed),
                         job.flags,
                         job.row_index,
+                        job.source,
                         now,
                         now,
                     ),
@@ -181,7 +195,9 @@ class ScannerDatabase(_BaseDB):
                 UPDATE jobs SET
                     id = ?, stable_key = ?, company = ?, role = ?, location = ?,
                     terms = ?, category = ?, apply_url = ?, simplify_url = ?,
-                    age = ?, is_closed = ?, flags = ?, row_index = ?, last_seen_at = ?
+                    age = ?, is_closed = ?, flags = ?, row_index = ?,
+                    source = CASE WHEN source = '' THEN ? ELSE source END,
+                    last_seen_at = ?
                 WHERE stable_key = ?
                 """,
                 (
@@ -198,6 +214,7 @@ class ScannerDatabase(_BaseDB):
                     int(job.is_closed),
                     job.flags,
                     job.row_index,
+                    job.source,
                     now,
                     key,
                 ),

@@ -3,7 +3,8 @@ name: Scan internships
 on:
   workflow_call:
     inputs:
-      upstream_sha:
+      upstream_shas:
+        description: 'JSON map of source key -> commit sha, e.g. {"off-season":"abc"}'
         required: false
         type: string
         default: ""
@@ -41,7 +42,7 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           DATABASE_PATH: job_assistant/data/scanner.db
           SCANNER_DB_PATH: job_assistant/data/scanner.db
-          UPSTREAM_SHA: ${{ inputs.upstream_sha }}
+          UPSTREAM_SHAS: ${{ inputs.upstream_shas }}
           CI: "true"
         run: python -m job_assistant scan
 

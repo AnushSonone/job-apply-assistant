@@ -67,7 +67,9 @@ def should_alert(job: Job) -> bool:
 
 def format_job_message(job: Job) -> str:
     url = job.apply_url or job.simplify_url
-    header = f"{job.company} — {job.role}"
+    lines = [f"{job.company} — {job.role}"]
+    if job.source:
+        lines.append(f"via {config.source_display(job.source)}")
     if url:
-        return f"{header}\n{url}"
-    return header
+        lines.append(url)
+    return "\n".join(lines)

@@ -13,23 +13,50 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       changed: ${{ steps.sha.outputs.changed }}
-      sha: ${{ steps.sha.outputs.sha }}
+      shas: ${{ steps.sha.outputs.shas }}
     steps:
       - uses: actions/checkout@v4
 
       - id: sha
+        env:
+          UPSTREAM_REPO: SimplifyJobs/Summer2027-Internships
+          UPSTREAM_BRANCH: dev
         run: |
-          SHA=$(curl -sf \
-            "https://api.github.com/repos/SimplifyJobs/Summer2026-Internships/commits?path=README-Off-Season.md&sha=dev&per_page=1" \
-            | jq -r '.[0].sha')
-          STORED=$(sqlite3 job_assistant/data/scanner.db \
-            "SELECT value FROM sync_state WHERE key='upstream_sha' LIMIT 1;" 2>/dev/null || echo "")
-          if [ -z "$STORED" ] || [ "$SHA" != "$STORED" ]; then
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-            echo "sha=$SHA" >> "$GITHUB_OUTPUT"
-          else
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-          fi
+          CHANGED=false
+          SHAS='{}'
+
+          # key:readme_path — one entry per source tracked in config.SOURCES.
+          for ENTRY in "off-season:README-Off-Season.md" "summer2027:README.md"; do
+            KEY="${ENTRY%%:*}"
+            README="${ENTRY#*:}"
+
+            # -L so a repo rename (301) does not poison the response body.
+            SHA=$(curl -sfL \
+              "https://api.github.com/repos/${UPSTREAM_REPO}/commits?path=${README}&sha=${UPSTREAM_BRANCH}&per_page=1" \
+              | jq -r '.[0].sha // empty')
+            if [ -z "$SHA" ]; then
+              echo "::error::could not resolve sha for ${UPSTREAM_REPO}/${README}"
+              exit 1
+            fi
+
+            STORED=$(sqlite3 job_assistant/data/scanner.db \
+              "SELECT value FROM sync_state WHERE key='upstream_sha:${KEY}' LIMIT 1;" 2>/dev/null || echo "")
+            # Fall back to the pre-multi-source key so the first run after this
+            # change does not treat the whole off-season list as new.
+            if [ -z "$STORED" ] && [ "$KEY" = "off-season" ]; then
+              STORED=$(sqlite3 job_assistant/data/scanner.db \
+                "SELECT value FROM sync_state WHERE key='upstream_sha' LIMIT 1;" 2>/dev/null || echo "")
+            fi
+
+            if [ "$SHA" != "$STORED" ]; then
+              CHANGED=true
+              echo "${KEY}: ${STORED:-<none>} -> ${SHA}"
+            fi
+            SHAS=$(jq -cn --argjson acc "$SHAS" --arg k "$KEY" --arg v "$SHA" '$acc + {($k): $v}')
+          done
+
+          echo "changed=$CHANGED" >> "$GITHUB_OUTPUT"
+          echo "shas=$SHAS" >> "$GITHUB_OUTPUT"
 
   scan:
     needs: check
@@ -40,4 +67,4 @@ jobs:
     uses: ./.github/workflows/scan-internships.yml
     secrets: inherit
     with:
-      upstream_sha: ${{ needs.check.outputs.sha }}
+      upstream_shas: ${{ needs.check.outputs.shas }}

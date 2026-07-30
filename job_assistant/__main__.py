@@ -73,34 +73,38 @@ def cmd_log_apply(args: argparse.Namespace) -> None:
     print(f"Logged application: {company}")
 
 
-def cmd_sync_upstream(_: argparse.Namespace) -> None:
-    """Align scanner state with current upstream README without sending alerts."""
+def _seed_all_sources(db: ScannerDatabase) -> tuple[int, int]:
+    """Upsert every source's current README and record its baseline SHA."""
     from .parser import parse_readme
-    from .upstream import fetch_latest_upstream_sha
+    from .upstream import fetch_latest_sha_for_source
 
+    total = 0
+    open_count = 0
+    for source in config.SOURCES:
+        content = fetch_readme(source.readme_url)
+        jobs = parse_readme(content, source.key)
+        for job in jobs:
+            db.upsert_job(job)
+        sha = fetch_latest_sha_for_source(source)
+        db.set_sync_value(source.sync_key, sha)
+        total += len(jobs)
+        open_count += sum(1 for j in jobs if not j.is_closed)
+        print(f"  {source.display}: {len(jobs)} jobs, sha={sha[:12]}…")
+    return total, open_count
+
+
+def cmd_sync_upstream(_: argparse.Namespace) -> None:
+    """Align scanner state with every upstream README without sending alerts."""
     db = ScannerDatabase(config.SCANNER_DB_PATH)
-    content = fetch_readme()
-    jobs = parse_readme(content)
-    for job in jobs:
-        db.upsert_job(job)
-    sha = fetch_latest_upstream_sha()
-    db.set_sync_value("upstream_sha", sha)
-    print(f"Synced {len(jobs)} jobs; upstream_sha={sha[:12]}…")
+    total, _open = _seed_all_sources(db)
+    print(f"Synced {total} jobs across {len(config.SOURCES)} source(s).")
 
 
 def cmd_init_db(_: argparse.Namespace) -> None:
-    from .parser import parse_readme
-    from .upstream import fetch_latest_upstream_sha
-
     db = ScannerDatabase(config.SCANNER_DB_PATH)
-    content = fetch_readme()
-    jobs = parse_readme(content)
-    for job in jobs:
-        db.upsert_job(job)
-    db.set_sync_value("upstream_sha", fetch_latest_upstream_sha())
-    open_count = sum(1 for j in jobs if not j.is_closed)
+    total, open_count = _seed_all_sources(db)
     print(
-        f"Seeded {len(jobs)} jobs ({open_count} open) into {config.SCANNER_DB_PATH}. "
+        f"Seeded {total} jobs ({open_count} open) into {config.SCANNER_DB_PATH}. "
         "Future scans diff upstream commits and alert only on fresh new rows."
     )
 

@@ -79,21 +79,25 @@ def _category_for_position(content: str, row_html: str) -> str:
     return "Unknown"
 
 
-def parse_readme(content: str) -> list[Job]:
+def parse_readme(content: str, source: str = "") -> list[Job]:
     soup = BeautifulSoup(content, "html.parser")
     jobs: list[Job] = []
 
     for row_index, row in enumerate(soup.find_all("tr")):
         cells = row.find_all("td")
-        if len(cells) < 6:
+        # The off-season list is Company/Role/Location/Terms/Application/Age; the
+        # main season list drops Terms. Anchor Application and Age from the right
+        # so either layout parses, and an extra column upstream does not silently
+        # zero out a whole source.
+        if len(cells) < 5:
             continue
 
         company, flags = _extract_company(cells[0])
         role = _clean(cells[1].get_text())
         location = _clean(cells[2].get_text())
-        terms = _clean(cells[3].get_text())
-        apply_url, simplify_url = _extract_links(cells[4])
-        age = _clean(cells[5].get_text())
+        terms = _clean(cells[3].get_text()) if len(cells) >= 6 else ""
+        apply_url, simplify_url = _extract_links(cells[-2])
+        age = _clean(cells[-1].get_text())
         is_closed = apply_url is None
 
         if not company or not role:
@@ -115,6 +119,7 @@ def parse_readme(content: str) -> list[Job]:
                 is_closed=is_closed,
                 flags=flags,
                 row_index=row_index,
+                source=source,
             )
         )
 
