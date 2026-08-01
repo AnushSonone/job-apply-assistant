@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import html
 import re
 
 from . import config
@@ -66,10 +67,15 @@ def should_alert(job: Job) -> bool:
 
 
 def format_job_message(job: Job) -> str:
+    """One line — "Company — Role — [List]" — with the apply URL behind the text.
+
+    Sent with parse_mode=HTML and previews off, so the alert stays a single
+    tappable line instead of a wall of tracking-parameter URLs.
+    """
     url = job.apply_url or job.simplify_url
-    lines = [f"{job.company} — {job.role}"]
-    if job.source:
-        lines.append(f"via {config.source_display(job.source)}")
+    title = html.escape(f"{job.company} — {job.role}")
     if url:
-        lines.append(url)
-    return "\n".join(lines)
+        title = f'<a href="{html.escape(url, quote=True)}">{title}</a>'
+    if job.source:
+        title += f" — [{html.escape(config.source_label(job.source))}]"
+    return title

@@ -61,7 +61,11 @@ def scan_source(
         if dry_run:
             print(f"[dry-run] would alert: {label}")
         elif notify and telegram.configured:
-            telegram.send_message(format_job_message(job))
+            telegram.send_message(
+                format_job_message(job),
+                disable_preview=True,
+                parse_mode="HTML",
+            )
 
         if not dry_run:
             db.mark_notified(job.id)

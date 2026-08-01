@@ -81,6 +81,12 @@ def source_display(key: str) -> str:
     return source.display if source else key
 
 
+def source_label(key: str) -> str:
+    """Short list name for alert text ("Off-Season"), not the full repo path."""
+    source = SOURCES_BY_KEY.get(key)
+    return source.label if source else key
+
+
 POLL_INTERVAL_SECONDS = int(os.getenv("POLL_INTERVAL_SECONDS", "600"))
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
@@ -107,7 +113,10 @@ def _pinned_shas() -> dict[str, str]:
 
 PINNED_SHAS = _pinned_shas()
 # Only alert when SimplifyJobs age column is still this fresh (0 = "0d" only).
-MAX_POSTING_AGE_DAYS = int(os.getenv("MAX_POSTING_AGE_DAYS", "0"))
+# 1d, not 0d: the age column counts from the *company's* posting date, not from
+# when SimplifyJobs added the row, so only ~14% of new rows ever land stamped 0d.
+# A 0d gate discarded roughly 80% of everything the commit-diff found.
+MAX_POSTING_AGE_DAYS = int(os.getenv("MAX_POSTING_AGE_DAYS", "1"))
 SCAN_DRY_RUN = os.getenv("SCAN_DRY_RUN", "").lower() in {"1", "true", "yes"}
 
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")

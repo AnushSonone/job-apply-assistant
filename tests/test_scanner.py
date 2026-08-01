@@ -88,7 +88,7 @@ def test_added_jobs_ignores_text_change_same_url() -> None:
     assert added_jobs(old, new) == []
 
 
-def test_should_alert_only_zero_day_skips_canada_and_uk() -> None:
+def test_should_alert_within_age_cutoff_skips_canada_and_uk() -> None:
     fresh = Job(
         id="x",
         company="Acme",
@@ -109,7 +109,9 @@ def test_should_alert_only_zero_day_skips_canada_and_uk() -> None:
     no_link = Job(**{**fresh.__dict__, "apply_url": None, "is_closed": True})
 
     assert should_alert(fresh) is True
-    assert should_alert(one_day) is False
+    # 1d must alert: the age column counts from the company's posting date, so
+    # most genuinely-new rows are already past 0d when SimplifyJobs lists them.
+    assert should_alert(one_day) is True
     assert should_alert(older_age) is False
     assert should_alert(canada) is False
     assert should_alert(uk) is False
@@ -213,20 +215,41 @@ def test_message_names_the_source_repo() -> None:
         source="summer2027",
     )
     message = format_job_message(job)
-    assert message.splitlines() == [
-        "Acme — SWE Intern",
-        "via SimplifyJobs/Summer2027-Internships (Summer 2027)",
-        "https://jobs.example.com/a",
-    ]
+    # One line, URL hidden behind the title, list name in brackets.
+    assert message == (
+        '<a href="https://jobs.example.com/a">Acme — SWE Intern</a> — [Summer 2027]'
+    )
+    assert "\n" not in message
 
     off_season = Job(**{**job.__dict__, "source": "off-season"})
-    assert "(Off-Season)" in format_job_message(off_season)
+    assert format_job_message(off_season).endswith("— [Off-Season]")
 
     untagged = Job(**{**job.__dict__, "source": ""})
-    assert format_job_message(untagged).splitlines() == [
-        "Acme — SWE Intern",
-        "https://jobs.example.com/a",
-    ]
+    assert format_job_message(untagged) == (
+        '<a href="https://jobs.example.com/a">Acme — SWE Intern</a>'
+    )
+
+
+def test_message_escapes_html_and_url_params() -> None:
+    job = Job(
+        id="x",
+        company="Kulicke & Soffa",
+        role="R&D Intern <all levels>",
+        location="Ambler, PA",
+        terms="Summer 2027",
+        category="Software Engineering",
+        apply_url="https://jobs.example.com/a?utm_source=Simplify&ref=Simplify",
+        simplify_url=None,
+        age="0d",
+        is_closed=False,
+        flags="",
+        source="off-season",
+    )
+    message = format_job_message(job)
+    assert "Kulicke &amp; Soffa" in message
+    assert "R&amp;D Intern &lt;all levels&gt;" in message
+    # Ampersands inside href must be escaped or Telegram rejects the entity.
+    assert 'href="https://jobs.example.com/a?utm_source=Simplify&amp;ref=Simplify"' in message
 
 
 def test_legacy_baseline_migrates_to_off_season_key(tmp_path) -> None:

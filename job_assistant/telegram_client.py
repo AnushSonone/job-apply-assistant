@@ -22,17 +22,26 @@ class TelegramClient:
     def configured(self) -> bool:
         return bool(self.token and self.chat_id)
 
-    def send_message(self, text: str, disable_preview: bool = False) -> dict:
+    def send_message(
+        self,
+        text: str,
+        disable_preview: bool = False,
+        parse_mode: str | None = None,
+    ) -> dict:
         if not self.configured:
             raise RuntimeError("TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID required")
+        payload: dict = {
+            "chat_id": self.chat_id,
+            "text": text,
+            "disable_web_page_preview": disable_preview,
+        }
+        # Opt-in only: resume diffs carry raw < and & that HTML mode would reject.
+        if parse_mode:
+            payload["parse_mode"] = parse_mode
         with httpx.Client(timeout=30) as client:
             resp = client.post(
                 f"{self.base}/sendMessage",
-                json={
-                    "chat_id": self.chat_id,
-                    "text": text,
-                    "disable_web_page_preview": disable_preview,
-                },
+                json=payload,
             )
             resp.raise_for_status()
             return resp.json()
